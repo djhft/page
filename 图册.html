@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>实时商品图册</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['"Noto Serif SC"', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'bg-dark': '#1a1a1a',
+                        'card-bg': '#262626',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { background-color:#121212; color:#e5e5e5; -webkit-tap-highlight-color: transparent; }
+        .no-scrollbar::-webkit-scrollbar { display:none; }
+        .no-scrollbar { scrollbar-width:none; }
+
+        #image-viewer { transition: opacity 0.3s ease; }
+        #viewer-img { transform-origin: 0 0; transition: transform 0.1s linear; will-change: transform; max-width:none; max-height:none; }
+
+        .list-item { animation: fadeIn 0.6s ease-out forwards; opacity:0; transform: translateY(20px);}
+        @keyframes fadeIn { to { opacity:1; transform: translateY(0); } }
+
+        .loader { border:3px solid rgba(255,255,255,0.1); border-radius:50%; border-top:3px solid #3b82f6; width:24px; height:24px; animation:spin 1s linear infinite; }
+        @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
+</head>
+<body class="antialiased min-h-screen pb-20">
+
+<header class="fixed top-0 left-0 right-0 z-30 bg-bg-dark/90 backdrop-blur-md border-b border-white/10">
+    <div class="max-w-2xl mx-auto px-5 py-4 flex justify-between items-center">
+        <h1 class="font-serif text-xl font-bold tracking-wide text-white">MY PRODUCTS</h1>
+        <div id="status-text" class="text-xs text-gray-400 font-mono flex items-center gap-2">
+            <span class="loader hidden" id="loading-spinner"></span>
+            <span id="status-msg">SYNCING...</span>
+        </div>
+    </div>
+</header>
+
+<div class="h-20"></div>
+
+<main class="max-w-2xl mx-auto px-4 space-y-8">
+    <div id="product-list" class="space-y-8"></div>
+    <div id="error-msg" class="hidden text-center py-10">
+        <i class="fa-solid fa-triangle-exclamation text-4xl text-red-500 mb-4"></i>
+        <p class="text-gray-400">加载失败，请检查网络或API地址</p>
+    </div>
+</main>
+
+<div id="image-viewer" class="fixed inset-0 z-50 hidden bg-black flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing">
+    <button onclick="closeViewer()" class="absolute top-6 right-6 z-50 w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white transition">
+        <i class="fa-solid fa-xmark text-xl"></i>
+    </button>
+    <div class="absolute bottom-10 left-0 right-0 text-center pointer-events-none z-40 opacity-50">
+        <p class="text-xs text-white tracking-widest uppercase">Pinch to zoom</p>
+    </div>
+    <div id="viewer-container" class="w-full h-full relative flex items-center justify-center overflow-hidden">
+        <img id="viewer-img" src="" alt="Full View" class="block w-full h-auto object-contain select-none">
+    </div>
+</div>
+
+<script>
+const API_URL = 'https://gitee.com/api/v5/repos/panzetao/image-bed/contents/image';
+const listContainer = document.getElementById('product-list');
+const viewer = document.getElementById('image-viewer');
+const viewerImg = document.getElementById('viewer-img');
+const viewerContainer = document.getElementById('viewer-container');
+const statusMsg = document.getElementById('status-msg');
+const loadingSpinner = document.getElementById('loading-spinner');
+const errorMsg = document.getElementById('error-msg');
+
+async function fetchProducts() {
+    loadingSpinner.classList.remove('hidden');
+    statusMsg.innerText = "LOADING...";
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) throw new Error('Network response not ok');
+        const data = await response.json();
+
+        const products = data
+            .filter(item => item.type === 'file' && !item.name.startsWith('.'))
+            .map(item => {
+                const raw = item.name.replace(/\.[^/.]+$/, '');
+                const parts = raw.split('-');
+
+                let name = raw;
+                let price = '询价';
+                let length = '-';
+                let width = '-';
+
+                if (parts.length >= 4) {
+                    price  = parts[parts.length - 3];
+                    length = parts[parts.length - 2];
+                    width  = parts[parts.length - 1];
+                    name   = parts.slice(0, parts.length - 3).join('-');
+                }
+
+                return { name, price, length, width, image: item.download_url };
+            });
+
+        renderList(products);
+        statusMsg.innerText = `${products.length} ITEMS`;
+        loadingSpinner.classList.add('hidden');
+
+    } catch (error) {
+        console.error(error);
+        statusMsg.innerText = "ERROR";
+        loadingSpinner.classList.add('hidden');
+        errorMsg.classList.remove('hidden');
+    }
+}
+
+function renderList(products) {
+    listContainer.innerHTML = products.map((p, i) => `
+        <div class="list-item group" style="animation-delay:${i*100}ms">
+            <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer" onclick="openViewer('${p.image}')">
+                <img src="${p.image}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+                <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
+                    <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 text-2xl transform scale-50 group-hover:scale-100 transition-all duration-300"></i>
+                </div>
+            </div>
+            <div class="mt-3 px-1 flex justify-between items-end">
+                <div>
+                    <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
+                    <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${p.length} × ${p.width}</p>
+                </div>
+                <span class="text-xl font-bold text-blue-400">¥${p.price}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function openViewer(src) {
+    viewerImg.src = src;
+    viewer.classList.remove('hidden');
+    state = { scale:1, panning:false, pointX:0, pointY:0, startX:0, startY:0, x:0, y:0 };
+    updateTransform();
+    document.body.style.overflow = 'hidden';
+}
+
+function closeViewer() {
+    viewer.classList.add('hidden');
+    document.body.style.overflow = '';
+}
+
+let state = { scale:1, panning:false, pointX:0, pointY:0, startX:0, startY:0, x:0, y:0 };
+const updateTransform = () => { viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`; }
+
+viewerContainer.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+        state.panning = true;
+        state.startX = e.touches[0].clientX - state.x;
+        state.startY = e.touches[0].clientY - state.y;
+    } else if (e.touches.length === 2) {
+        state.panning = false;
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        state.distance = Math.hypot(dx, dy);
+    }
+});
+
+viewerContainer.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 1 && state.scale>1) { state.x = e.touches[0].clientX - state.startX; state.y = e.touches[0].clientY - state.startY; updateTransform(); }
+    else if (e.touches.length===2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const distance = Math.hypot(dx,dy);
+        const diff = distance - state.distance;
+        const newScale = state.scale + diff*0.01;
+        if(newScale>0.5&&newScale<5){ state.scale=newScale; state.distance=distance; updateTransform(); }
+    }
+},{passive:false});
+
+viewerContainer.addEventListener('touchend', e => { if(state.scale<1){ state.scale=1; state.x=0; state.y=0; updateTransform(); }});
+viewerContainer.addEventListener('wheel', e => {
+    e.preventDefault();
+    const delta = -e.deltaY;
+    const factor = delta>0?1.1:0.9;
+    const newScale = state.scale*factor;
+    if(newScale>0.5&&newScale<5){ state.scale=newScale; updateTransform(); }
+},{passive:false});
+
+fetchProducts();
+</script>
+
+</body>
+</html>
