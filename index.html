@@ -75,13 +75,13 @@
 </div>
 
 <script>
-// === 本地图片列表（请根据实际文件名调整）===
-const LOCAL_IMAGES = [
-    "5号s-20-20-20.jpg",
-    "6号s-30-30-30.jpg"
-    // 可继续添加更多图片文件名
-];
+// ===== GitHub 仓库配置 =====
+const GITHUB_OWNER = 'djhft';
+const GITHUB_REPO  = 'page';
+const GITHUB_BRANCH = 'main';
+const API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/image?ref=${GITHUB_BRANCH}`;
 
+// DOM 元素引用
 const listContainer = document.getElementById('product-list');
 const viewer = document.getElementById('image-viewer');
 const viewerImg = document.getElementById('viewer-img');
@@ -90,37 +90,58 @@ const statusMsg = document.getElementById('status-msg');
 const loadingSpinner = document.getElementById('loading-spinner');
 const errorMsg = document.getElementById('error-msg');
 
-// 解析本地图片信息（复用原有逻辑）
-function parseLocalProducts() {
-    return LOCAL_IMAGES.map(filename => {
-        const raw = filename.replace(/\.[^/.]+$/, ''); // 去掉扩展名
-        const parts = raw.split('-');
-
-        let name = raw;
-        let price = '询价';
-        let length = '-';
-        let width = '-';
-
-        if (parts.length >= 4) {
-            price  = parts[parts.length - 3];
-            length = parts[parts.length - 2];
-            width  = parts[parts.length - 1];
-            name   = parts.slice(0, parts.length - 3).join('-');
+// 从 GitHub 获取图片列表
+async function fetchProducts() {
+    loadingSpinner.classList.remove('hidden');
+    statusMsg.innerText = "LOADING...";
+    try {
+        const response = await fetch(API_URL);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
+        const data = await response.json();
 
-        return {
-            name,
-            price,
-            length,
-            width,
-            image: `./image/${filename}` // 👈 关键：使用本地相对路径
-        };
-    });
+        const products = data
+                .filter(item => 
+                    item.type === 'file' && 
+                    !item.name.startsWith('.') &&
+                    /\.(jpg|jpeg|png|webp)$/i.test(item.name)
+                )
+                .map(item => {
+                const raw = item.name.replace(/\.[^/.]+$/, ''); // 去掉扩展名
+                const parts = raw.split('-');
+
+                let name = raw;
+                let price = '询价';
+                let length = '-';
+                let width = '-';
+
+                // 至少要有 4 段（名称 + 价格 + 长 + 宽）
+                if (parts.length >= 4) {
+                    price  = parts[parts.length - 3];
+                    length = parts[parts.length - 2];
+                    width  = parts[parts.length - 1];
+                    name   = parts.slice(0, parts.length - 3).join('-');
+                }
+
+                return { name, price, length, width, image: item.download_url };
+            });
+
+        renderList(products);
+        statusMsg.innerText = `${products.length} ITEMS`;
+        loadingSpinner.classList.add('hidden');
+    } catch (error) {
+        console.error('Error fetching products:', error);
+        statusMsg.innerText = "ERROR";
+        loadingSpinner.classList.add('hidden');
+        errorMsg.classList.remove('hidden');
+    }
 }
 
+// 渲染商品列表
 function renderList(products) {
     listContainer.innerHTML = products.map((p, i) => `
-        <div class="list-item group" style="animation-delay:${i*100}ms">
+        <div class="list-item group" style="animation-delay:${i * 100}ms">
             <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer" onclick="openViewer('${p.image}')">
                 <img src="${p.image}" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
@@ -138,10 +159,11 @@ function renderList(products) {
     `).join('');
 }
 
+// 图片查看器
 function openViewer(src) {
     viewerImg.src = src;
     viewer.classList.remove('hidden');
-    state = { scale:1, panning:false, pointX:0, pointY:0, startX:0, startY:0, x:0, y:0 };
+    state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0, x: 0, y: 0 };
     updateTransform();
     document.body.style.overflow = 'hidden';
 }
@@ -151,9 +173,13 @@ function closeViewer() {
     document.body.style.overflow = '';
 }
 
-let state = { scale:1, panning:false, pointX:0, pointY:0, startX:0, startY:0, x:0, y:0 };
-const updateTransform = () => { viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`; }
+// 缩放/平移状态
+let state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0, x: 0, y: 0 };
+const updateTransform = () => {
+    viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+};
 
+// 触摸事件（移动端缩放/拖拽）
 viewerContainer.addEventListener('touchstart', e => {
     if (e.touches.length === 1) {
         state.panning = true;
@@ -169,39 +195,47 @@ viewerContainer.addEventListener('touchstart', e => {
 
 viewerContainer.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (e.touches.length === 1 && state.scale>1) { state.x = e.touches[0].clientX - state.startX; state.y = e.touches[0].clientY - state.startY; updateTransform(); }
-    else if (e.touches.length===2) {
+    if (e.touches.length === 1 && state.scale > 1) {
+        state.x = e.touches[0].clientX - state.startX;
+        state.y = e.touches[0].clientY - state.startY;
+        updateTransform();
+    } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const distance = Math.hypot(dx,dy);
+        const distance = Math.hypot(dx, dy);
         const diff = distance - state.distance;
-        const newScale = state.scale + diff*0.01;
-        if(newScale>0.5&&newScale<5){ state.scale=newScale; state.distance=distance; updateTransform(); }
+        const newScale = state.scale + diff * 0.01;
+        if (newScale > 0.5 && newScale < 5) {
+            state.scale = newScale;
+            state.distance = distance;
+            updateTransform();
+        }
     }
-},{passive:false});
+}, { passive: false });
 
-viewerContainer.addEventListener('touchend', e => { if(state.scale<1){ state.scale=1; state.x=0; state.y=0; updateTransform(); }});
+viewerContainer.addEventListener('touchend', () => {
+    if (state.scale < 1) {
+        state.scale = 1;
+        state.x = 0;
+        state.y = 0;
+        updateTransform();
+    }
+});
+
+// 鼠标滚轮缩放（桌面端）
 viewerContainer.addEventListener('wheel', e => {
     e.preventDefault();
     const delta = -e.deltaY;
-    const factor = delta>0?1.1:0.9;
-    const newScale = state.scale*factor;
-    if(newScale>0.5&&newScale<5){ state.scale=newScale; updateTransform(); }
-},{passive:false});
-
-// === 页面加载时直接使用本地图片 ===
-window.addEventListener('DOMContentLoaded', () => {
-    loadingSpinner.classList.add('hidden'); // 不需要加载动画
-    try {
-        const products = parseLocalProducts();
-        renderList(products);
-        statusMsg.innerText = `${products.length} ITEMS`;
-    } catch (error) {
-        console.error(error);
-        statusMsg.innerText = "ERROR";
-        errorMsg.classList.remove('hidden');
+    const factor = delta > 0 ? 1.1 : 0.9;
+    const newScale = state.scale * factor;
+    if (newScale > 0.5 && newScale < 5) {
+        state.scale = newScale;
+        updateTransform();
     }
-});
+}, { passive: false });
+
+// 启动加载
+fetchProducts();
 </script>
 
 </body>
