@@ -75,7 +75,13 @@
 </div>
 
 <script>
-const API_URL = 'https://gitee.com/api/v5/repos/panzetao/image-bed/contents/image';
+// === 本地图片列表（请根据实际文件名调整）===
+const LOCAL_IMAGES = [
+    "5号s-20-20-20.jpg",
+    "6号s-30-30-30.jpg"
+    // 可继续添加更多图片文件名
+];
+
 const listContainer = document.getElementById('product-list');
 const viewer = document.getElementById('image-viewer');
 const viewerImg = document.getElementById('viewer-img');
@@ -84,45 +90,32 @@ const statusMsg = document.getElementById('status-msg');
 const loadingSpinner = document.getElementById('loading-spinner');
 const errorMsg = document.getElementById('error-msg');
 
-async function fetchProducts() {
-    loadingSpinner.classList.remove('hidden');
-    statusMsg.innerText = "LOADING...";
-    try {
-        const response = await fetch(API_URL);
-        if (!response.ok) throw new Error('Network response not ok');
-        const data = await response.json();
+// 解析本地图片信息（复用原有逻辑）
+function parseLocalProducts() {
+    return LOCAL_IMAGES.map(filename => {
+        const raw = filename.replace(/\.[^/.]+$/, ''); // 去掉扩展名
+        const parts = raw.split('-');
 
-        const products = data
-            .filter(item => item.type === 'file' && !item.name.startsWith('.'))
-            .map(item => {
-                const raw = item.name.replace(/\.[^/.]+$/, '');
-                const parts = raw.split('-');
+        let name = raw;
+        let price = '询价';
+        let length = '-';
+        let width = '-';
 
-                let name = raw;
-                let price = '询价';
-                let length = '-';
-                let width = '-';
+        if (parts.length >= 4) {
+            price  = parts[parts.length - 3];
+            length = parts[parts.length - 2];
+            width  = parts[parts.length - 1];
+            name   = parts.slice(0, parts.length - 3).join('-');
+        }
 
-                if (parts.length >= 4) {
-                    price  = parts[parts.length - 3];
-                    length = parts[parts.length - 2];
-                    width  = parts[parts.length - 1];
-                    name   = parts.slice(0, parts.length - 3).join('-');
-                }
-
-                return { name, price, length, width, image: item.download_url };
-            });
-
-        renderList(products);
-        statusMsg.innerText = `${products.length} ITEMS`;
-        loadingSpinner.classList.add('hidden');
-
-    } catch (error) {
-        console.error(error);
-        statusMsg.innerText = "ERROR";
-        loadingSpinner.classList.add('hidden');
-        errorMsg.classList.remove('hidden');
-    }
+        return {
+            name,
+            price,
+            length,
+            width,
+            image: `./image/${filename}` // 👈 关键：使用本地相对路径
+        };
+    });
 }
 
 function renderList(products) {
@@ -196,7 +189,19 @@ viewerContainer.addEventListener('wheel', e => {
     if(newScale>0.5&&newScale<5){ state.scale=newScale; updateTransform(); }
 },{passive:false});
 
-fetchProducts();
+// === 页面加载时直接使用本地图片 ===
+window.addEventListener('DOMContentLoaded', () => {
+    loadingSpinner.classList.add('hidden'); // 不需要加载动画
+    try {
+        const products = parseLocalProducts();
+        renderList(products);
+        statusMsg.innerText = `${products.length} ITEMS`;
+    } catch (error) {
+        console.error(error);
+        statusMsg.innerText = "ERROR";
+        errorMsg.classList.remove('hidden');
+    }
+});
 </script>
 
 </body>
