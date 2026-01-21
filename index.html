@@ -75,11 +75,11 @@
 </div>
 
 <script>
-// ===== GitHub 仓库配置 =====
-const GITHUB_OWNER = 'djhft';
-const GITHUB_REPO  = 'page';
-const GITHUB_BRANCH = 'main';
-const API_URL = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/image?ref=${GITHUB_BRANCH}`;
+// ===== Gitee 仓库配置 =====
+const GITEE_OWNER = 'panzetao';
+const GITEE_REPO  = 'image-bed';
+const GITEE_BRANCH = 'master';
+const API_URL = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image?ref=${GITEE_BRANCH}`;
 
 // DOM 元素引用
 const listContainer = document.getElementById('product-list');
@@ -90,7 +90,7 @@ const statusMsg = document.getElementById('status-msg');
 const loadingSpinner = document.getElementById('loading-spinner');
 const errorMsg = document.getElementById('error-msg');
 
-// 从 GitHub 获取图片列表
+// 从 Gitee 获取图片列表
 async function fetchProducts() {
     loadingSpinner.classList.remove('hidden');
     statusMsg.innerText = "LOADING...";
