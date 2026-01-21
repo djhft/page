@@ -72,11 +72,11 @@
     <button onclick="closeViewer()" class="absolute top-6 right-6 z-50 w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white transition">
         <i class="fa-solid fa-xmark text-xl"></i>
     </button>
-    <div class="absolute bottom-10 left-0 right-0 text-center pointer-events-none z-40 opacity-50">
-        <p class="text-xs text-white tracking-widest uppercase">Pinch to zoom</p>
+    <div class="absolute bottom-10 left-0 right-0 text-center pointer-events-none z-40">
+        <p class="text-xs text-white tracking-widest uppercase opacity-75">双击放大 | 滚轮缩放 | 拖拽移动 | ESC关闭</p>
     </div>
-    <div id="viewer-container" class="w-full h-full relative flex items-center justify-center overflow-hidden">
-        <img id="viewer-img" src="" alt="Full View" class="block w-full h-auto object-contain select-none">
+    <div id="viewer-container" class="w-full h-full relative flex items-center justify-center overflow-hidden bg-gradient-to-b from-black via-gray-900 to-black">
+        <img id="viewer-img" src="" alt="Full View" class="block max-w-full max-h-full object-contain select-none" style="cursor: grab;">
     </div>
 </div>
 
@@ -301,9 +301,37 @@ function openViewer(src) {
     viewerImg.src = src;
     viewerImg.referrerPolicy = "no-referrer"; 
     viewer.classList.remove('hidden');
-    state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0, x: 0, y: 0 };
-    updateTransform();
     document.body.style.overflow = 'hidden';
+    
+    // 等待图片加载后计算初始缩放
+    viewerImg.onload = () => {
+        const containerWidth = viewerContainer.clientWidth;
+        const containerHeight = viewerContainer.clientHeight;
+        const imgWidth = viewerImg.naturalWidth;
+        const imgHeight = viewerImg.naturalHeight;
+        
+        // 计算自适应缩放
+        const scaleX = containerWidth / imgWidth;
+        const scaleY = containerHeight / imgHeight;
+        const initialScale = Math.min(scaleX, scaleY, 1);
+        
+        state = { 
+            scale: initialScale, 
+            panning: false, 
+            pointX: 0, 
+            pointY: 0, 
+            startX: 0, 
+            startY: 0, 
+            x: 0, 
+            y: 0,
+            lastClickTime: 0,
+            minScale: initialScale,
+            maxScale: 5,
+            naturalWidth: imgWidth,
+            naturalHeight: imgHeight
+        };
+        updateTransform();
+    };
 }
 
 function closeViewer() {
@@ -312,9 +340,35 @@ function closeViewer() {
 }
 
 // 缩放/平移状态
-let state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0, x: 0, y: 0 };
+let state = { 
+    scale: 1, 
+    panning: false, 
+    pointX: 0, 
+    pointY: 0, 
+    startX: 0, 
+    startY: 0, 
+    x: 0, 
+    y: 0,
+    lastClickTime: 0,
+    minScale: 1,
+    maxScale: 5,
+    naturalWidth: 0,
+    naturalHeight: 0
+};
+
 const updateTransform = () => {
     viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
+};
+
+// 限制拖拽范围
+const constrainPosition = () => {
+    const container = viewerContainer;
+    const img = viewerImg;
+    const maxX = (img.naturalWidth * state.scale - container.clientWidth) / 2;
+    const maxY = (img.naturalHeight * state.scale - container.clientHeight) / 2;
+    
+    state.x = Math.max(-maxX, Math.min(maxX, state.x));
+    state.y = Math.max(-maxY, Math.min(maxY, state.y));
 };
 
 // 触摸事件（移动端缩放/拖拽）
@@ -328,32 +382,40 @@ viewerContainer.addEventListener('touchstart', e => {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         state.distance = Math.hypot(dx, dy);
+        
+        // 计算缩放中心
+        state.centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        state.centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
 });
 
 viewerContainer.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (e.touches.length === 1 && state.scale > 1) {
+    if (e.touches.length === 1 && state.panning) {
         state.x = e.touches[0].clientX - state.startX;
         state.y = e.touches[0].clientY - state.startY;
+        constrainPosition();
         updateTransform();
     } else if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const distance = Math.hypot(dx, dy);
         const diff = distance - state.distance;
-        const newScale = state.scale + diff * 0.01;
-        if (newScale > 0.5 && newScale < 5) {
+        const newScale = Math.max(state.minScale, Math.min(state.maxScale, state.scale + diff * 0.01));
+        
+        if (newScale !== state.scale) {
             state.scale = newScale;
-            state.distance = distance;
+            constrainPosition();
             updateTransform();
         }
+        state.distance = distance;
     }
 }, { passive: false });
 
 viewerContainer.addEventListener('touchend', () => {
-    if (state.scale < 1) {
-        state.scale = 1;
+    state.panning = false;
+    if (state.scale < state.minScale) {
+        state.scale = state.minScale;
         state.x = 0;
         state.y = 0;
         updateTransform();
@@ -365,12 +427,90 @@ viewerContainer.addEventListener('wheel', e => {
     e.preventDefault();
     const delta = -e.deltaY;
     const factor = delta > 0 ? 1.1 : 0.9;
-    const newScale = state.scale * factor;
-    if (newScale > 0.5 && newScale < 5) {
+    const newScale = Math.max(state.minScale, Math.min(state.maxScale, state.scale * factor));
+    
+    if (newScale !== state.scale) {
         state.scale = newScale;
+        constrainPosition();
         updateTransform();
     }
 }, { passive: false });
+
+// 鼠标拖拽
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+
+viewerContainer.addEventListener('mousedown', e => {
+    if (state.scale > state.minScale + 0.01) {
+        isDragging = true;
+        dragStartX = e.clientX - state.x;
+        dragStartY = e.clientY - state.y;
+        viewerContainer.style.cursor = 'grabbing';
+    }
+});
+
+document.addEventListener('mousemove', e => {
+    if (isDragging && viewer.classList.contains('hidden') === false) {
+        state.x = e.clientX - dragStartX;
+        state.y = e.clientY - dragStartY;
+        constrainPosition();
+        updateTransform();
+    }
+});
+
+document.addEventListener('mouseup', () => {
+    isDragging = false;
+    viewerContainer.style.cursor = 'grab';
+});
+
+// 双击放大/缩小
+viewerImg.addEventListener('dblclick', e => {
+    e.preventDefault();
+    const now = Date.now();
+    
+    if (state.scale > state.minScale + 0.01) {
+        // 缩小到初始大小
+        state.scale = state.minScale;
+        state.x = 0;
+        state.y = 0;
+    } else {
+        // 放大到 2x
+        state.scale = Math.min(2, state.maxScale);
+    }
+    
+    constrainPosition();
+    updateTransform();
+});
+
+// 键盘控制
+document.addEventListener('keydown', e => {
+    if (viewer.classList.contains('hidden')) return;
+    
+    switch(e.key) {
+        case 'Escape':
+            closeViewer();
+            break;
+        case '+':
+        case '=':
+            state.scale = Math.min(state.maxScale, state.scale * 1.2);
+            constrainPosition();
+            updateTransform();
+            break;
+        case '-':
+            state.scale = Math.max(state.minScale, state.scale / 1.2);
+            constrainPosition();
+            updateTransform();
+            break;
+        case '0':
+            // 重置
+            state.scale = state.minScale;
+            state.x = 0;
+            state.y = 0;
+            updateTransform();
+            break;
+    }
+});
 
 // 分类过滤事件
 filterAllBtn.addEventListener('click', showAllProducts);
