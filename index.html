@@ -43,11 +43,17 @@
 <body class="antialiased min-h-screen pb-20">
 
 <header class="fixed top-0 left-0 right-0 z-30 bg-bg-dark/90 backdrop-blur-md border-b border-white/10">
-    <div class="max-w-2xl mx-auto px-5 py-4 flex justify-between items-center">
-        <h1 class="font-serif text-xl font-bold tracking-wide text-white">MY PRODUCTS</h1>
-        <div id="status-text" class="text-xs text-gray-400 font-mono flex items-center gap-2">
-            <span class="loader hidden" id="loading-spinner"></span>
-            <span id="status-msg">SYNCING...</span>
+    <div class="max-w-2xl mx-auto px-5 py-4">
+        <div class="flex justify-between items-center mb-4">
+            <h1 class="font-serif text-xl font-bold tracking-wide text-white">MY PRODUCTS</h1>
+            <div id="status-text" class="text-xs text-gray-400 font-mono flex items-center gap-2">
+                <span class="loader hidden" id="loading-spinner"></span>
+                <span id="status-msg">SYNCING...</span>
+            </div>
+        </div>
+        <div class="flex gap-2 flex-wrap">
+            <button id="filter-all" class="px-3 py-1 text-xs rounded-full bg-blue-600 text-white hover:bg-blue-700 transition cursor-pointer">全部商品</button>
+            <div id="category-filters" class="flex gap-2 flex-wrap"></div>
         </div>
     </div>
 </header>
@@ -79,7 +85,12 @@
 const GITEE_OWNER = 'panzetao';
 const GITEE_REPO  = 'image-bed';
 const GITEE_BRANCH = 'master';
-const API_URL = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image?ref=${GITEE_BRANCH}`;
+const API_BASE = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents`;
+
+// 全局变量
+let allProducts = [];
+let categories = [];
+let currentFilter = null;
 
 // DOM 元素引用
 const listContainer = document.getElementById('product-list');
@@ -89,46 +100,162 @@ const viewerContainer = document.getElementById('viewer-container');
 const statusMsg = document.getElementById('status-msg');
 const loadingSpinner = document.getElementById('loading-spinner');
 const errorMsg = document.getElementById('error-msg');
+const filterAllBtn = document.getElementById('filter-all');
+const categoryFilters = document.getElementById('category-filters');
+
+// 递归获取所有文件
+async function fetchFilesRecursive(path = 'image') {
+    try {
+        const response = await fetch(`${API_BASE}/${path}?ref=${GITEE_BRANCH}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const data = await response.json();
+        let files = [];
+
+        for (const item of data) {
+            if (item.type === 'file' && /\.(jpg|jpeg|png|webp|gif)$/i.test(item.name)) {
+                files.push({
+                    name: item.name,
+                    path: item.path,
+                    download_url: item.download_url,
+                    category: path === 'image' ? null : path.split('/')[1] // 提取分类名
+                });
+            } else if (item.type === 'dir' && item.name !== '.gitkeep') {
+                const subFiles = await fetchFilesRecursive(item.path);
+                files = files.concat(subFiles);
+            }
+        }
+        return files;
+    } catch (error) {
+        console.error(`获取 ${path} 失败:`, error);
+        return [];
+    }
+}
+
+// 获取所有分类
+async function fetchCategories() {
+    try {
+        const response = await fetch(`${API_BASE}/image?ref=${GITEE_BRANCH}`);
+        if (!response.ok) return [];
+        const data = await response.json();
+        
+        categories = data
+            .filter(item => item.type === 'dir' && item.name !== '.gitkeep')
+            .map(item => item.name)
+            .sort();
+    } catch (error) {
+        console.error('获取分类失败:', error);
+    }
+}
+
+// 渲染分类过滤按钮（只显示有商品的分类）
+function renderCategoryFilters() {
+    // 获取所有有商品的分类
+    const categoriesWithProducts = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
+    
+    categoryFilters.innerHTML = categoriesWithProducts.map(cat => `
+        <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category="${cat}">
+            ${cat}
+        </button>
+    `).join('');
+    
+    // 添加事件监听
+    document.querySelectorAll('.category-filter').forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterByCategory(btn.dataset.category);
+        });
+    });
+}
+
+// 按分类过滤
+function filterByCategory(category) {
+    currentFilter = category;
+    updateFilterUI();
+    renderFilteredProducts();
+}
+
+// 显示全部
+function showAllProducts() {
+    currentFilter = null;
+    updateFilterUI();
+    renderFilteredProducts();
+}
+
+// 更新过滤按钮 UI
+function updateFilterUI() {
+    filterAllBtn.classList.toggle('bg-blue-600', currentFilter === null);
+    filterAllBtn.classList.toggle('bg-gray-700', currentFilter !== null);
+    filterAllBtn.classList.toggle('text-white', currentFilter === null);
+    filterAllBtn.classList.toggle('text-gray-300', currentFilter !== null);
+    
+    document.querySelectorAll('.category-filter').forEach(btn => {
+        const isActive = btn.dataset.category === currentFilter;
+        btn.classList.toggle('bg-blue-600', isActive);
+        btn.classList.toggle('bg-gray-700', !isActive);
+        btn.classList.toggle('text-white', isActive);
+        btn.classList.toggle('text-gray-300', !isActive);
+    });
+}
+
+// 渲染过滤后的商品
+function renderFilteredProducts() {
+    const filtered = currentFilter 
+        ? allProducts.filter(p => p.category === currentFilter)
+        : allProducts;
+    
+    renderList(filtered);
+    statusMsg.innerText = `${filtered.length} ITEMS`;
+}
 
 // 从 Gitee 获取图片列表
 async function fetchProducts() {
     loadingSpinner.classList.remove('hidden');
     statusMsg.innerText = "LOADING...";
+    errorMsg.classList.add('hidden');
+    
     try {
-        const response = await fetch(API_URL);
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // 获取所有文件
+        const files = await fetchFilesRecursive('image');
+        
+        if (!files.length) {
+            throw new Error('没有找到图片文件');
         }
-        const data = await response.json();
 
-        const products = data
-                .filter(item => 
-                    item.type === 'file' && 
-                    !item.name.startsWith('.') &&
-                    /\.(jpg|jpeg|png|webp)$/i.test(item.name)
-                )
-                .map(item => {
-                const raw = item.name.replace(/\.[^/.]+$/, ''); // 去掉扩展名
-                const parts = raw.split('-');
+        allProducts = files.map(item => {
+            const raw = item.name.replace(/\.[^/.]+$/, '');
+            const parts = raw.rsplit('-', 3);
 
-                let name = raw;
-                let price = '询价';
-                let length = '-';
-                let width = '-';
+            let name = raw;
+            let price = '询价';
+            let length = '-';
+            let width = '-';
 
-                // 至少要有 4 段（名称 + 价格 + 长 + 宽）
-                if (parts.length >= 4) {
-                    price  = parts[parts.length - 3];
-                    length = parts[parts.length - 2];
-                    width  = parts[parts.length - 1];
-                    name   = parts.slice(0, parts.length - 3).join('-');
-                }
+            if (parts.length === 4) {
+                name = parts[0];
+                price = parts[1];
+                length = parts[2];
+                width = parts[3];
+            } else if (parts.length >= 3) {
+                name = parts.slice(0, -3).join('-');
+                price = parts[parts.length - 3];
+                length = parts[parts.length - 2];
+                width = parts[parts.length - 1];
+            }
 
-                return { name, price, length, width, image: item.download_url };
-            });
+            return { 
+                name, 
+                price, 
+                length, 
+                width, 
+                image: item.download_url,
+                category: item.category
+            };
+        });
 
-        renderList(products);
-        statusMsg.innerText = `${products.length} ITEMS`;
+        // 获取分类并渲染（必须在获取商品后）
+        renderCategoryFilters();
+        renderFilteredProducts();
         loadingSpinner.classList.add('hidden');
     } catch (error) {
         console.error('Error fetching products:', error);
@@ -138,12 +265,21 @@ async function fetchProducts() {
     }
 }
 
+// 字符串扩展：添加 rsplit 方法
+if (!String.prototype.rsplit) {
+    String.prototype.rsplit = function(sep, limit) {
+        const arr = this.split(sep);
+        if (limit === undefined) return arr;
+        return [arr.slice(0, -limit).join(sep), ...arr.slice(-limit)];
+    };
+}
+
 // 渲染商品列表
 function renderList(products) {
     listContainer.innerHTML = products.map((p, i) => `
         <div class="list-item group" style="animation-delay:${i * 100}ms">
-            <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer" onclick="openViewer('${p.image}')">
-               <img src="${p.image}" referrerpolicy="no-referrer" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+            <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer" onclick="openViewer('${p.image.replace(/'/g, "\\'")}')">
+               <img src="${p.image}" referrerpolicy="no-referrer" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 400 300%22%3E%3Crect fill=%22%23444%22 width=%22400%22 height=%22300%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 font-size=%2224%22 fill=%22%23999%22 text-anchor=%22middle%22 dy=%22.3em%22%3E加载失败%3C/text%3E%3C/svg%3E'">
                 <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
                     <i class="fa-solid fa-expand text-white opacity-0 group-hover:opacity-100 text-2xl transform scale-50 group-hover:scale-100 transition-all duration-300"></i>
                 </div>
@@ -152,6 +288,7 @@ function renderList(products) {
                 <div>
                     <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
                     <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${p.length} × ${p.width}</p>
+                    ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
                 </div>
                 <span class="text-xl font-bold text-blue-400">¥${p.price}</span>
             </div>
@@ -234,6 +371,9 @@ viewerContainer.addEventListener('wheel', e => {
         updateTransform();
     }
 }, { passive: false });
+
+// 分类过滤事件
+filterAllBtn.addEventListener('click', showAllProducts);
 
 // 启动加载
 fetchProducts();
