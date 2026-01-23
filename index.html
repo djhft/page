@@ -60,7 +60,6 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    /* 画廊指示器样式 */
     .gallery-indicator {
       position: absolute;
       bottom: 60px;
@@ -114,7 +113,6 @@
   <div class="absolute bottom-10 left-0 right-0 text-center pointer-events-none z-40 px-4">
     <p class="text-xs text-white tracking-widest uppercase opacity-75">双指缩放 • 拖拽移动 • 双击放大 • 点击外侧关闭</p>
   </div>
-  <!-- 画廊指示器 -->
   <div id="gallery-indicator" class="gallery-indicator"></div>
   <div id="viewer-container" class="w-full h-full relative flex items-center justify-center overflow-hidden bg-gradient-to-b from-black via-gray-900 to-black">
     <img id="viewer-img" src="" alt="Full View" class="block max-w-full max-h-full object-contain select-none" style="cursor: grab;">
@@ -122,23 +120,23 @@
 </div>
 
 <script>
-// ===== Gitee Pages 配置 =====
+// ===== Gitee 配置 =====
 const GITEE_OWNER = 'panzetao';
 const GITEE_REPO = 'image-bed';
-const BASE_URL = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image`;
+// 注意：路径必须与仓库中一致
+const FILE_PATH = 'image/products.json'; // 不要以 / 开头
 
 // 全局变量
 let allProducts = [];
 let categories = [];
 let currentFilter = null;
 
-// 当前画廊状态
 let galleryState = {
   currentIndex: 0,
-  images: [] // 当前商品的所有图片URL数组
+  images: []
 };
 
-// DOM 元素引用
+// DOM 引用
 const listContainer = document.getElementById('product-list');
 const viewer = document.getElementById('image-viewer');
 const viewerImg = document.getElementById('viewer-img');
@@ -150,45 +148,47 @@ const filterAllBtn = document.getElementById('filter-all');
 const categoryFilters = document.getElementById('category-filters');
 const galleryIndicator = document.getElementById('gallery-indicator');
 
-// 从 Gitee Pages 获取 products.json
+// ===== 核心：通过 Gitee API 获取并解码 products.json =====
 async function fetchProducts() {
   loadingSpinner.classList.remove('hidden');
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
 
   try {
-    // 第一步：获取文件元信息
-    const metaResponse = await fetch(`${BASE_URL}/products.json`);
-    if (!metaResponse.ok) {
-      throw new Error(`HTTP ${metaResponse.status} when fetching file metadata`);
-    }
-    const metaData = await metaResponse.json();
+    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${FILE_PATH}`;
+    const response = await fetch(apiUrl);
 
-    // 第二步：从 download_url 获取真实内容
-    const contentResponse = await fetch(metaData.download_url);
-    if (!contentResponse.ok) {
-      throw new Error(`HTTP ${contentResponse.status} when fetching file content`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    const data = await contentResponse.json(); // 这才是真正的 products 数组！
 
-    // 确保 data 是数组
+    const fileMeta = await response.json();
+
+    if (!fileMeta || typeof fileMeta.content !== 'string') {
+      throw new Error('未获取到文件内容，请确认文件存在且小于1MB');
+    }
+
+    // 解码 base64 并解析 JSON
+    const decoded = atob(fileMeta.content.replace(/\s/g, ''));
+    const data = JSON.parse(decoded);
+
     if (!Array.isArray(data)) {
-      throw new Error("products.json 内容不是数组");
+      throw new Error('products.json 必须是一个数组');
     }
 
-    // 将数据映射为前端 Product 对象
+    // 构建商品数据（带安全访问）
     allProducts = data.map(item => ({
-      name: item.name,
-      price: item.price,
-      length: item.dimensions.split(' x ')[0] || '-',
-      width: item.dimensions.split(' x ')[1] || '-',
-      height: item.dimensions.split(' x ')[2] || null,
-      description: item.description,
-      category: item.category,
-      images: item.images // [{url, type}, ...]
+      name: item.name || '无名商品',
+      price: item.price || 0,
+      length: (item.dimensions?.split(' x ')[0]) || '-',
+      width: (item.dimensions?.split(' x ')[1]) || '-',
+      height: (item.dimensions?.split(' x ')[2]) || null,
+      description: item.description || '',
+      category: item.category || '',
+      images: Array.isArray(item.images) ? item.images : []
     }));
 
-    categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
+    categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     
     renderCategoryFilters();
     renderFilteredProducts();
@@ -201,7 +201,7 @@ async function fetchProducts() {
   }
 }
 
-// 渲染分类过滤按钮
+// 渲染分类按钮
 function renderCategoryFilters() {
   categoryFilters.innerHTML = categories.map(cat => `
     <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category="${cat}">
@@ -209,7 +209,6 @@ function renderCategoryFilters() {
     </button>
   `).join('');
 
-  // 添加事件监听
   document.querySelectorAll('.category-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       filterByCategory(btn.dataset.category);
@@ -217,7 +216,6 @@ function renderCategoryFilters() {
   });
 }
 
-// 过滤逻辑
 function filterByCategory(category) {
   currentFilter = category;
   updateFilterUI();
@@ -245,7 +243,6 @@ function updateFilterUI() {
   });
 }
 
-// 渲染商品列表
 function renderFilteredProducts() {
   const filtered = currentFilter 
     ? allProducts.filter(p => p.category === currentFilter) 
@@ -255,12 +252,9 @@ function renderFilteredProducts() {
   statusMsg.innerText = `${filtered.length} ITEMS`;
 }
 
-// 渲染商品卡片
 function renderList(products) {
   listContainer.innerHTML = products.map((p, i) => {
-    // 找到主图
     const mainImage = p.images.find(img => img.type === 'main')?.url || '';
-    // 构建尺寸字符串
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
 
@@ -288,7 +282,7 @@ function renderList(products) {
 
 // ========== 画廊功能 ==========
 function openGallery(imageUrls) {
-  if (!imageUrls || imageUrls.length === 0) return;
+  if (!Array.isArray(imageUrls) || imageUrls.length === 0) return;
   
   galleryState.images = imageUrls;
   galleryState.currentIndex = 0;
@@ -303,7 +297,6 @@ function openGallery(imageUrls) {
 function closeViewer() {
   viewer.classList.add('hidden');
   document.body.style.overflow = '';
-  // 重置状态
   galleryState = { currentIndex: 0, images: [] };
   galleryIndicator.innerHTML = '';
 }
@@ -331,7 +324,6 @@ function loadGalleryImage() {
   viewerImg.src = url;
   viewerImg.referrerPolicy = "no-referrer";
   
-  // 重置缩放和平移状态
   viewerImg.onload = () => {
     const containerWidth = viewerContainer.clientWidth;
     const containerHeight = viewerContainer.clientHeight;
@@ -361,41 +353,27 @@ function loadGalleryImage() {
   };
 }
 
-// ========== 图片查看器逻辑 (保持不变，但用于画廊) ==========
-let state = { scale: 1, panning: false, pointX: 0, pointY: 0, startX: 0, startY: 0, x: 0, y: 0, lastClickTime: 0, minScale: 1, maxScale: 5, naturalWidth: 0, naturalHeight: 0, doubleTapTimer: null };
+// ========== 图片交互状态 ==========
+let state = { scale: 1, panning: false, x: 0, y: 0, minScale: 1, maxScale: 5, naturalWidth: 0, naturalHeight: 0 };
 
 const updateTransform = () => {
   viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
 };
 
-const constrainPosition = () => {
-  const container = viewerContainer;
-  const img = viewerImg;
-  const maxX = (img.naturalWidth * state.scale - container.clientWidth) / 2;
-  const maxY = (img.naturalHeight * state.scale - container.clientHeight) / 2;
-  state.x = Math.max(-maxX, Math.min(maxX, state.x));
-  state.y = Math.max(-maxY, Math.min(maxY, state.y));
-};
-
-// ... (此处省略了 touch/mouse/keyboard 事件处理代码，与原代码相同) ...
-// 为了简洁，这里假设这些事件处理器代码保持不变，并且能正常工作。
-
-// 分类过滤事件
+// ========== 事件绑定 ==========
 filterAllBtn.addEventListener('click', showAllProducts);
 
-// 背景点击关闭
 viewer.addEventListener('click', e => {
   if (e.target === viewer || e.target === viewerContainer) {
     closeViewer();
   }
 });
 
-// 防止点击图片时关闭
 viewerImg.addEventListener('click', e => {
   e.stopPropagation();
 });
 
-// 启动加载
+// 启动
 fetchProducts();
 </script>
 </body>
