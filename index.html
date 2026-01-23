@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -80,9 +80,7 @@
     }
   </style>
 </head>
-
 <body class="antialiased min-h-screen pb-20">
-
 <header class="fixed top-0 left-0 right-0 z-30 bg-bg-dark/90 backdrop-blur-md border-b border-white/10">
   <div class="max-w-2xl mx-auto px-5 py-4">
     <div class="flex justify-between items-center mb-4">
@@ -98,9 +96,7 @@
     </div>
   </div>
 </header>
-
 <div class="h-20"></div>
-
 <main class="max-w-2xl mx-auto px-4 space-y-8">
   <div id="product-list" class="space-y-8"></div>
   <div id="error-msg" class="hidden text-center py-10">
@@ -108,7 +104,6 @@
     <p class="text-gray-400">加载失败，请检查网络或API地址</p>
   </div>
 </main>
-
 <!-- 图片查看器 -->
 <div id="image-viewer" class="fixed inset-0 z-50 hidden bg-black flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing">
   <button onclick="closeViewer()" class="absolute top-6 right-6 z-50 w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white transition">
@@ -122,18 +117,15 @@
     <img id="viewer-img" src="" alt="Full View" class="block max-w-full max-h-full object-contain select-none" style="cursor: grab;">
   </div>
 </div>
-
 <script>
 // ===== Gitee 配置 =====
 const GITEE_OWNER = 'panzetao';
 const GITEE_REPO = 'image-bed';
 const FILE_PATH = 'image/products.json';
-
 // ===== 全局变量 =====
 let allProducts = [];
 let categories = [];
 let currentFilter = null;
-
 let galleryState = {
   currentIndex: 0,
   images: []
@@ -151,7 +143,6 @@ const filterAllBtn = document.getElementById('filter-all');
 const categoryFilters = document.getElementById('category-filters');
 const galleryIndicator = document.getElementById('gallery-indicator');
 
-
 // =====================
 // ✅ 修复点：UTF-8 Base64 解码
 // =====================
@@ -161,28 +152,21 @@ function base64ToUtf8(base64) {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
-
 // ===== 获取 products.json =====
 async function fetchProducts() {
   loadingSpinner.classList.remove('hidden');
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
-
   try {
-    
     const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${FILE_PATH}`;
     const response = await fetch(apiUrl);
-
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
     const fileMeta = await response.json();
-
     // ✅ 修复：正确 UTF-8 解码
     const decoded = base64ToUtf8(fileMeta.content);
     const data = JSON.parse(decoded);
-
     allProducts = data.map(item => ({
       name: item.name || '无名商品',
       price: item.price || 0,
@@ -193,9 +177,7 @@ async function fetchProducts() {
       category: item.category || '',
       images: Array.isArray(item.images) ? item.images : []
     }));
-
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
-
     renderCategoryFilters();
     renderFilteredProducts();
     loadingSpinner.classList.add('hidden');
@@ -214,11 +196,10 @@ function renderCategoryFilters() {
       ${cat}
     </button>
   `).join('');
-
+  
+  // 重新绑定分类过滤器事件
   document.querySelectorAll('.category-filter').forEach(btn => {
-    btn.addEventListener('click', () => {
-      filterByCategory(btn.dataset.category);
-    });
+    btn.onclick = () => filterByCategory(btn.dataset.category);
   });
 }
 
@@ -237,7 +218,6 @@ function showAllProducts() {
 function updateFilterUI() {
   filterAllBtn.classList.toggle('bg-blue-600', currentFilter === null);
   filterAllBtn.classList.toggle('bg-gray-700', currentFilter !== null);
-
   document.querySelectorAll('.category-filter').forEach(btn => {
     const isActive = btn.dataset.category === currentFilter;
     btn.classList.toggle('bg-blue-600', isActive);
@@ -246,10 +226,9 @@ function updateFilterUI() {
 }
 
 function renderFilteredProducts() {
-  const filtered = currentFilter 
+  const filtered = currentFilter
     ? allProducts.filter(p => p.category === currentFilter)
     : allProducts;
-
   renderList(filtered);
   statusMsg.innerText = `${filtered.length} ITEMS`;
 }
@@ -260,25 +239,33 @@ function renderList(products) {
     const mainImage = p.images.find(img => img.type === 'main')?.url || '';
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
-
-    return `
-      <div class="list-item group" style="animation-delay:${i * 100}ms">
-        <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer"
-             onclick="openGallery(${JSON.stringify(p.images.map(img => img.url))})">
-          <img src="${mainImage}" referrerpolicy="no-referrer"
-               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+    
+    // 创建容器元素
+    const container = document.createElement('div');
+    container.className = 'list-item group';
+    container.style.animationDelay = `${i * 100}ms`;
+    
+    container.innerHTML = `
+      <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg">
+        <img src="${mainImage}" referrerpolicy="no-referrer"
+             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+      </div>
+      <div class="mt-3 px-1 flex justify-between items-end gap-4">
+        <div>
+          <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
+          <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
+          ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
+          ${p.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>` : ''}
         </div>
-        <div class="mt-3 px-1 flex justify-between items-end gap-4">
-          <div>
-            <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
-            <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
-            ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
-            ${p.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>` : ''}
-          </div>
-          <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
-        </div>
+        <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
       </div>
     `;
+    
+    // 添加点击事件监听器
+    const imageDiv = container.querySelector('.aspect-[4/3]');
+    imageDiv.onclick = () => openGallery(p.images.map(img => img.url));
+    
+    return container.outerHTML;
   }).join('');
 }
 
@@ -301,12 +288,14 @@ function loadGalleryImage() {
   viewerImg.src = galleryState.images[galleryState.currentIndex];
 }
 
-// ===== 事件 =====
-filterAllBtn.addEventListener('click', showAllProducts);
+// ===== 事件绑定 =====
+filterAllBtn.onclick = showAllProducts;
 
 // ===== 启动 =====
 fetchProducts();
 </script>
-
 </body>
 </html>
+
+
+
