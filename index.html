@@ -255,9 +255,11 @@ async function fetchDetail(detailPath) {
     if (cleanPath.startsWith('/')) {
       cleanPath = cleanPath.substring(1);
     }
+    console.log(cleanPath);
+    
 
     // 构造 API URL：直接拼接路径（含中文）
-    const apiUrl = `https://gitee.com/api/v5/repos/ $ {GITEE_OWNER}/ $ {GITEE_REPO}/contents/ $ {cleanPath}`;
+    const apiUrl = `https://gitee.com/api/v5/repos/ ${GITEE_OWNER}/ ${GITEE_REPO}/contents/ ${cleanPath}`;
 
     console.log('Fetching detail from:', apiUrl); // 调试用
 
