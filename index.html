@@ -259,13 +259,13 @@ async function fetchDetail(detailPath) {
     
 
     // 构造 API URL：直接拼接路径（含中文）
-    const apiUrl = `https://gitee.com/api/v5/repos/ ${GITEE_OWNER}/ ${GITEE_REPO}/contents/ ${cleanPath}`;
+    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${cleanPath}`;
 
     console.log('Fetching detail from:', apiUrl); // 调试用
 
     const response = await fetch(apiUrl);
     if (!response.ok) {
-      throw new Error(`HTTP  $ {response.status}:  $ {response.statusText}`);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
     
     const fileMeta = await response.json();
