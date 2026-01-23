@@ -183,11 +183,11 @@ const nextBtn = document.getElementById('next-btn');
 // =====================
 // ✅ 修复点：UTF-8 Base64 解码
 // =====================
-function base64ToUtf8(base64) {
-  const binary = atob(base64.replace(/\s/g, ''));
-  const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-  return new TextDecoder('utf-8').decode(bytes);
-}
+// function base64ToUtf8(base64) {
+//   const binary = atob(base64.replace(/\s/g, ''));
+//   const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+//   return new TextDecoder('utf-8').decode(bytes);
+// }
 
 // ===== 获取 products.json =====
 async function fetchProducts() {
@@ -217,7 +217,7 @@ async function fetchProducts() {
     
     const fileMeta = await response.json();
     // ✅ 修复：正确 UTF-8 解码
-    const decoded = base64ToUtf8(fileMeta.content);
+    const decoded = fileMeta.content;
     const data = JSON.parse(decoded);
     
     allProducts = data.map(item => ({
@@ -245,7 +245,7 @@ async function fetchProducts() {
       if (!fallbackRes.ok) throw new Error('代理访问失败');
       
       const fileMeta = await fallbackRes.json();
-      const decoded = base64ToUtf8(fileMeta.content);
+      const decoded = fileMeta.content;
       const data = JSON.parse(decoded);
       
       allProducts = data.map(item => ({
@@ -311,7 +311,7 @@ async function fetchDetail(detailPath) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
     const fileMeta = await response.json();
-    const decoded = base64ToUtf8(fileMeta.content);
+    const decoded = fileMeta.content;
     const detailData = JSON.parse(decoded);
     
     // 返回图片URL数组（包括主图和详细图）
@@ -331,7 +331,7 @@ async function fetchDetail(detailPath) {
       if (!fallbackRes.ok) throw new Error('代理访问失败');
       
       const fileMeta = await fallbackRes.json();
-      const decoded = base64ToUtf8(fileMeta.content);
+      const decoded = fileMeta.content;
       const detailData = JSON.parse(decoded);
       
       return detailData.images.map(img => img.url);
