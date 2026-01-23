@@ -156,7 +156,7 @@
 // ===== Gitee 配置 =====
 const GITEE_OWNER = 'panzetao';
 const GITEE_REPO = 'image-bed';
-const FILE_PATH = 'image/products.json';
+const FILE_PATH = 'products.json';
 // ===== 全局变量 =====
 let allProducts = [];
 let categories = [];
@@ -195,7 +195,7 @@ async function fetchProducts() {
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
   try {
-    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${FILE_PATH}`;
+    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${FILE_PATH}`;
     const response = await fetch(apiUrl);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -259,7 +259,7 @@ async function fetchDetail(detailPath) {
     
 
     // 构造 API URL：直接拼接路径（含中文）
-    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${cleanPath}`;
+    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${cleanPath}`;
 
     console.log('Fetching detail from:', apiUrl); // 调试用
 
