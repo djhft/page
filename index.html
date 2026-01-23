@@ -78,6 +78,31 @@
     .gallery-dot.active {
       background-color: white;
     }
+    .nav-button {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 60px;
+      height: 60px;
+      background-color: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 50;
+      backdrop-filter: blur(10px);
+      transition: background-color 0.2s;
+    }
+    .nav-button:hover {
+      background-color: rgba(255, 255, 255, 0.3);
+    }
+    .nav-button.prev {
+      left: 20px;
+    }
+    .nav-button.next {
+      right: 20px;
+    }
     .aspect-ratio-box {
       aspect-ratio: 4 / 3;
     }
@@ -118,6 +143,13 @@
   <div id="gallery-indicator" class="gallery-indicator"></div>
   <div id="viewer-container" class="w-full h-full relative flex items-center justify-center overflow-hidden bg-gradient-to-b from-black via-gray-900 to-black">
     <img id="viewer-img" src="" alt="Full View" class="block max-w-full max-h-full object-contain select-none" style="cursor: grab;">
+    <!-- 左右导航按钮 -->
+    <button id="prev-btn" class="nav-button prev" onclick="prevImage()">
+      <i class="fas fa-chevron-left text-xl text-white"></i>
+    </button>
+    <button id="next-btn" class="nav-button next" onclick="nextImage()">
+      <i class="fas fa-chevron-right text-xl text-white"></i>
+    </button>
   </div>
 </div>
 <script>
@@ -145,6 +177,8 @@ const errorMsg = document.getElementById('error-msg');
 const filterAllBtn = document.getElementById('filter-all');
 const categoryFilters = document.getElementById('category-filters');
 const galleryIndicator = document.getElementById('gallery-indicator');
+const prevBtn = document.getElementById('prev-btn');
+const nextBtn = document.getElementById('next-btn');
 
 // =====================
 // ✅ 修复点：UTF-8 Base64 解码
@@ -178,7 +212,8 @@ async function fetchProducts() {
       height: (item.dimensions?.split(' x ')[2]) || null,
       description: item.description || '',
       category: item.category || '',
-      images: Array.isArray(item.images) ? item.images : []
+      images: Array.isArray(item.images) ? item.images : [],
+      detailPath: getDetailPath(item)
     }));
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     renderCategoryFilters();
@@ -189,6 +224,49 @@ async function fetchProducts() {
     statusMsg.innerText = "ERROR";
     loadingSpinner.classList.add('hidden');
     errorMsg.classList.remove('hidden');
+  }
+}
+
+// ===== 提取详情路径 =====
+function getDetailPath(item) {
+  // 从主图路径提取目录和名称
+  const mainImage = item.images.find(img => img.type === 'main');
+  if (mainImage) {
+    const url = mainImage.url;
+    // 假设主图路径为 "蹲坑/2号_main.jpg"
+    const parts = url.split('/');
+    if (parts.length >= 2) {
+      const dir = parts.slice(0, -1).join('/'); // "蹲坑"
+      const fileName = parts[parts.length - 1]; // "2号_main.jpg"
+      const name = fileName.replace(/_.*$/, ''); // "2号"
+      return `${dir}/${name}_main.json`; // "蹲坑/2号_main.json"
+    }
+  }
+  return null;
+}
+
+// ===== 获取详情页信息 =====
+async function fetchDetail(detailPath) {
+  try {
+    // 构造详情文件的Gitee API URL
+    const encodedPath = encodeURIComponent(detailPath);
+    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${encodedPath}`;
+    
+    const response = await fetch(apiUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    
+    const fileMeta = await response.json();
+    const decoded = base64ToUtf8(fileMeta.content);
+    const detailData = JSON.parse(decoded);
+    
+    // 返回图片URL数组（包括主图和详细图）
+    return detailData.images.map(img => img.url);
+  } catch (error) {
+    console.error('加载详情失败:', error);
+    // 如果加载详情失败，返回原始图片
+    return [];
   }
 }
 
@@ -243,9 +321,15 @@ function renderList(products) {
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
     
+    // 如果没有描述，则显示分类信息
+    let infoText = p.description || p.category;
+    if (!infoText) infoText = '暂无描述';
+    
     return `
       <div class="list-item group" style="animation-delay:${i * 100}ms">
-        <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" data-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
+        <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
+             data-detail-path="${p.detailPath || ''}"
+             data-original-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
           <img src="${mainImage}" referrerpolicy="no-referrer"
                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
         </div>
@@ -253,8 +337,7 @@ function renderList(products) {
           <div>
             <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
             <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
-            ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
-            ${p.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>` : ''}
+            <p class="text-xs text-gray-400 mt-1 line-clamp-2">${infoText}</p>
           </div>
           <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
         </div>
@@ -265,10 +348,26 @@ function renderList(products) {
   // 为所有图片容器添加点击事件监听器
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
-      container.onclick = () => {
-        const encodedImages = container.getAttribute('data-images');
-        const imageUrls = JSON.parse(decodeURIComponent(encodedImages));
-        openGallery(imageUrls);
+      container.onclick = async () => {
+        const detailPath = container.getAttribute('data-detail-path');
+        const originalImagesStr = container.getAttribute('data-original-images');
+        const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
+        
+        if (detailPath) {
+          // 尝试加载详情页信息
+          const detailImages = await fetchDetail(detailPath);
+          
+          if (detailImages && detailImages.length > 0) {
+            // 使用详情页的图片（包括主图和详细图）
+            openGallery(detailImages);
+          } else {
+            // 如果详情加载失败，使用原始图片
+            openGallery(originalImages);
+          }
+        } else {
+          // 如果没有详情路径，使用原始图片
+          openGallery(originalImages);
+        }
       };
     });
   }, 100);
@@ -277,20 +376,257 @@ function renderList(products) {
 // ===== 画廊 =====
 function openGallery(imageUrls) {
   if (!imageUrls.length) return;
-  galleryState.images = imageUrls;
+  
+  // 转换相对路径为完整URL
+  const fullImageUrls = imageUrls.map(url => {
+    if (url.startsWith('http')) {
+      return url;
+    } else {
+      // 假设基础URL为仓库的raw链接
+      return `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${url}`;
+    }
+  });
+  
+  galleryState.images = fullImageUrls;
   galleryState.currentIndex = 0;
   loadGalleryImage();
+  renderGalleryIndicators();
   viewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+  
+  // 更新导航按钮状态
+  updateNavButtons();
+  
+  // 添加触摸事件用于缩放和平移
+  setupTouchEvents();
+}
+
+function renderGalleryIndicators() {
+  const indicator = document.getElementById('gallery-indicator');
+  if (galleryState.images.length <= 1) {
+    indicator.innerHTML = '';
+    return;
+  }
+  
+  indicator.innerHTML = galleryState.images.map((_, index) => `
+    <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}" 
+         data-index="${index}"></div>
+  `).join('');
+  
+  // 绑定指示器点击事件
+  document.querySelectorAll('.gallery-dot').forEach(dot => {
+    dot.onclick = (e) => {
+      e.stopPropagation();
+      const index = parseInt(e.target.getAttribute('data-index'));
+      galleryState.currentIndex = index;
+      loadGalleryImage();
+      renderGalleryIndicators();
+      updateNavButtons();
+    };
+  });
+}
+
+function updateNavButtons() {
+  if (galleryState.images.length <= 1) {
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+  } else {
+    prevBtn.style.display = 'flex';
+    nextBtn.style.display = 'flex';
+    // 根据当前位置禁用按钮
+    prevBtn.disabled = galleryState.currentIndex === 0;
+    nextBtn.disabled = galleryState.currentIndex === galleryState.images.length - 1;
+    prevBtn.style.opacity = galleryState.currentIndex === 0 ? '0.5' : '1';
+    nextBtn.style.opacity = galleryState.currentIndex === galleryState.images.length - 1 ? '0.5' : '1';
+  }
+}
+
+function prevImage() {
+  if (galleryState.currentIndex > 0) {
+    galleryState.currentIndex--;
+    loadGalleryImage();
+    renderGalleryIndicators();
+    updateNavButtons();
+  }
+}
+
+function nextImage() {
+  if (galleryState.currentIndex < galleryState.images.length - 1) {
+    galleryState.currentIndex++;
+    loadGalleryImage();
+    renderGalleryIndicators();
+    updateNavButtons();
+  }
+}
+
+// ===== 触摸事件处理 =====
+let initialScale = 1;
+let currentScale = 1;
+let initialDistance = 0;
+let lastX = 0;
+let lastY = 0;
+let currentX = 0;
+let currentY = 0;
+
+function setupTouchEvents() {
+  const container = document.getElementById('viewer-container');
+  const img = document.getElementById('viewer-img');
+  
+  // 重置变换
+  resetViewerTransform();
+  
+  // 双击缩放
+  img.addEventListener('dblclick', (e) => {
+    e.preventDefault();
+    if (currentScale > 1) {
+      // 如果当前是放大的，恢复原状
+      currentScale = 1;
+      currentX = 0;
+      currentY = 0;
+    } else {
+      // 如果当前是正常的，放大2倍
+      currentScale = 2;
+    }
+    applyTransform();
+  });
+
+  // 单指拖拽
+  let isDragging = false;
+  
+  img.addEventListener('mousedown', startDrag);
+  img.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      startDrag(e);
+    } else if (e.touches.length === 2) {
+      // 双指缩放开始
+      startPinch(e);
+    }
+  });
+
+  function startDrag(e) {
+    e.preventDefault();
+    isDragging = true;
+    
+    if (e.type === 'touchstart') {
+      lastX = e.touches[0].clientX;
+      lastY = e.touches[0].clientY;
+    } else {
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+    
+    img.style.cursor = 'grabbing';
+  }
+
+  function drag(e) {
+    if (!isDragging) return;
+    
+    e.preventDefault();
+    let clientX, clientY;
+    
+    if (e.type === 'mousemove') {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else if (e.type === 'touchmove') {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    }
+    
+    if (clientX !== undefined && clientY !== undefined) {
+      const deltaX = clientX - lastX;
+      const deltaY = clientY - lastY;
+      
+      currentX += deltaX;
+      currentY += deltaY;
+      
+      lastX = clientX;
+      lastY = clientY;
+      
+      applyTransform();
+    }
+  }
+
+  function endDrag() {
+    isDragging = false;
+    img.style.cursor = 'grab';
+  }
+
+  // 缩放功能
+  function startPinch(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      initialDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      initialScale = currentScale;
+    }
+  }
+
+  function pinch(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const currentDistance = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      
+      const scaleDelta = currentDistance / initialDistance;
+      currentScale = initialScale * scaleDelta;
+      
+      // 限制最大缩放比例
+      if (currentScale > 5) currentScale = 5;
+      if (currentScale < 0.5) currentScale = 0.5;
+      
+      applyTransform();
+    }
+  }
+
+  function applyTransform() {
+    img.style.transform = `translate(${currentX}px, ${currentY}px) scale(${currentScale})`;
+  }
+
+  // 添加事件监听器
+  document.addEventListener('mousemove', drag);
+  document.addEventListener('mouseup', endDrag);
+  document.addEventListener('touchmove', drag, { passive: false });
+  document.addEventListener('touchend', endDrag);
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      pinch(e);
+    }
+  }, { passive: false });
+  
+  // 点击容器关闭
+  container.addEventListener('click', (e) => {
+    if (e.target === container) {
+      closeViewer();
+    }
+  });
+}
+
+// 全局可用的重置函数
+function resetViewerTransform() {
+  currentScale = 1;
+  currentX = 0;
+  currentY = 0;
+  if (viewerImg) {
+    viewerImg.style.transform = 'translate(0px, 0px) scale(1)';
+  }
 }
 
 function closeViewer() {
   viewer.classList.add('hidden');
   document.body.style.overflow = '';
+  resetViewerTransform(); // 调用全局函数
 }
 
 function loadGalleryImage() {
   viewerImg.src = galleryState.images[galleryState.currentIndex];
+  // 确保在图片加载完成后重置变换
+  viewerImg.onload = function() {
+    resetViewerTransform();
+  };
 }
 
 // ===== 事件绑定 =====
