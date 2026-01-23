@@ -199,7 +199,7 @@ async function fetchProducts() {
     // const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image/${FILE_PATH}`;
 
     // 方案2：跨域代理兜底（如果 API 访问仍失败，取消注释下方）
-    const proxyUrl = `https://cors-anywhere.herokuapp.com/https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image/${FILE_PATH}?ref=master`;
+    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${FILE_PATH}`;
 
     const response = await fetch(apiUrl, {
       method: 'GET',
