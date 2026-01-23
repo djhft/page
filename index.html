@@ -248,21 +248,22 @@ function getDetailPath(item) {
 // ===== 获取详情页信息 =====
 async function fetchDetail(detailPath) {
   try {
-    // 修复：如果detailPath已经是完整URL，则直接使用
-    let apiUrl;
-    if (detailPath.startsWith('http')) {
-      // 如果是完整URL，构造API URL
-      const encodedPath = encodeURIComponent(detailPath.replace('https://gitee.com/', '').replace(`${GITEE_OWNER}/${GITEE_REPO}/raw/master/`, ''));
-      apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${encodedPath}`;
-    } else {
-      // 如果是相对路径，直接使用
-      const encodedPath = encodeURIComponent(detailPath);
-      apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${encodedPath}`;
+    // ✅ 关键修复：不要用 encodeURIComponent 编码整个路径！
+    // 直接使用原始路径（包含中文和 /），让 fetch 自动处理编码
+    // 但确保路径不以 / 开头
+    let cleanPath = detailPath;
+    if (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
     }
-    
+
+    // 构造 API URL：直接拼接路径（含中文）
+    const apiUrl = `https://gitee.com/api/v5/repos/ $ {GITEE_OWNER}/ $ {GITEE_REPO}/contents/ $ {cleanPath}`;
+
+    console.log('Fetching detail from:', apiUrl); // 调试用
+
     const response = await fetch(apiUrl);
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      throw new Error(`HTTP  $ {response.status}:  $ {response.statusText}`);
     }
     
     const fileMeta = await response.json();
@@ -273,7 +274,6 @@ async function fetchDetail(detailPath) {
     return detailData.images.map(img => img.url);
   } catch (error) {
     console.error('加载详情失败:', error);
-    // 如果加载详情失败，返回空数组
     return [];
   }
 }
