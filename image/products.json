@@ -9,6 +9,10 @@
       {
         "url": "https://raw.githubusercontent.com/djhft/page/main/image/dunkeng/2hao_main.jpg",
         "type": "main"
+      },
+      {
+        "url": "https://raw.githubusercontent.com/djhft/page/main/image/dunkeng/2hao_detail1.jpg",
+        "type": "detail"
       }
     ]
   }

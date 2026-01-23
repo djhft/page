@@ -10,6 +10,10 @@
     {
       "url": "image/dunkeng/2hao_main.jpg",
       "type": "main"
+    },
+    {
+      "url": "image/dunkeng/2hao_detail1.jpg",
+      "type": "detail"
     }
   ]
 }
