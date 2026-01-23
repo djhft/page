@@ -4,16 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>实时商品图册</title>
-
-
   <script src="https://cdn.tailwindcss.com"></script>
-
-
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-
-
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
-
   <script>
     tailwind.config = {
       theme: {
@@ -30,7 +23,6 @@
       }
     }
   </script>
-
   <style>
     body {
       background-color: #121212;
@@ -86,16 +78,10 @@
     .gallery-dot.active {
       background-color: white;
     }
-
-
-
   </style>
 </head>
 <body class="antialiased min-h-screen pb-20">
 <header class="fixed top-0 left-0 right-0 z-30 bg-bg-dark/90 backdrop-blur-md border-b border-white/10">
-
-
-
   <div class="max-w-2xl mx-auto px-5 py-4">
     <div class="flex justify-between items-center mb-4">
       <h1 class="font-serif text-xl font-bold tracking-wide text-white">MY PRODUCTS</h1>
@@ -110,19 +96,14 @@
     </div>
   </div>
 </header>
-
 <div class="h-20"></div>
 <main class="max-w-2xl mx-auto px-4 space-y-8">
   <div id="product-list" class="space-y-8"></div>
   <div id="error-msg" class="hidden text-center py-10">
-
-
-
     <i class="fa-solid fa-triangle-exclamation text-4xl text-red-500 mb-4"></i>
     <p class="text-gray-400">加载失败，请检查网络或API地址</p>
   </div>
 </main>
-
 <!-- 图片查看器 (增强版画廊) -->
 <div id="image-viewer" class="fixed inset-0 z-50 hidden bg-black flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing">
   <button onclick="closeViewer()" class="absolute top-6 right-6 z-50 w-10 h-10 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center text-white transition">
@@ -136,24 +117,20 @@
     <img id="viewer-img" src="" alt="Full View" class="block max-w-full max-h-full object-contain select-none" style="cursor: grab;">
   </div>
 </div>
-
 <script>
 // ===== Gitee 配置 =====
 const GITEE_OWNER = 'panzetao';
 const GITEE_REPO = 'image-bed';
 // 注意：路径必须与仓库中一致
 const FILE_PATH = 'image/products.json'; // 不要以 / 开头
-
 // 全局变量
 let allProducts = [];
 let categories = [];
 let currentFilter = null;
-
 let galleryState = {
   currentIndex: 0,
   images: []
 };
-
 // DOM 引用
 const listContainer = document.getElementById('product-list');
 const viewer = document.getElementById('image-viewer');
@@ -165,27 +142,23 @@ const errorMsg = document.getElementById('error-msg');
 const filterAllBtn = document.getElementById('filter-all');
 const categoryFilters = document.getElementById('category-filters');
 const galleryIndicator = document.getElementById('gallery-indicator');
-
 // ===== 核心：通过 Gitee API 获取并解码 products.json =====
 async function fetchProducts() {
   loadingSpinner.classList.remove('hidden');
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
-
   try {
-    const apiUrl = `https://cdn.jsdelivr.net/gh/${GITEE_OWNER}/${GITEE_REPO}@master/${FILE_PATH}`;
+    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/${FILE_PATH}`;
     const response = await fetch(apiUrl);
-
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
-    const data = await response.json();
-
+    const text = await response.text(); // 先取文本
+    console.log(text); // 在控制台检查文本是否正常（中文是否乱码）
+    const data = JSON.parse(text); // 再解析
     if (!Array.isArray(data)) {
       throw new Error('products.json 必须是数组');
     }
-
     allProducts = data.map(item => ({
       name: item.name || '无名商品',
       price: item.price || 0,
@@ -194,13 +167,14 @@ async function fetchProducts() {
       height: item.dimensions?.split(' x ')[2] || null,
       description: item.description || '',
       category: item.category || '',
-      images: Array.isArray(item.images) ? item.images : []
+      images: Array.isArray(item.images) ? item.images.map(img => ({
+        ...img,
+        url: encodeURI(img.url) // 这里编码
+      })) : []
     }));
-
     categories = [...new Set(allProducts.map(p => p.category).filter(Boolean))];
     renderCategoryFilters();
     renderFilteredProducts();
-
     loadingSpinner.classList.add('hidden');
   } catch (err) {
     console.error(err);
@@ -209,8 +183,6 @@ async function fetchProducts() {
     errorMsg.classList.remove('hidden');
   }
 }
-
-
 // 渲染分类按钮
 function renderCategoryFilters() {
   categoryFilters.innerHTML = categories.map(cat => `
@@ -218,32 +190,27 @@ function renderCategoryFilters() {
       ${cat}
     </button>
   `).join('');
-
   document.querySelectorAll('.category-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       filterByCategory(btn.dataset.category);
     });
   });
 }
-
 function filterByCategory(category) {
   currentFilter = category;
   updateFilterUI();
   renderFilteredProducts();
 }
-
 function showAllProducts() {
   currentFilter = null;
   updateFilterUI();
   renderFilteredProducts();
 }
-
 function updateFilterUI() {
   filterAllBtn.classList.toggle('bg-blue-600', currentFilter === null);
   filterAllBtn.classList.toggle('bg-gray-700', currentFilter !== null);
   filterAllBtn.classList.toggle('text-white', currentFilter === null);
   filterAllBtn.classList.toggle('text-gray-300', currentFilter !== null);
-
   document.querySelectorAll('.category-filter').forEach(btn => {
     const isActive = btn.dataset.category === currentFilter;
     btn.classList.toggle('bg-blue-600', isActive);
@@ -252,22 +219,19 @@ function updateFilterUI() {
     btn.classList.toggle('text-gray-300', !isActive);
   });
 }
-
 function renderFilteredProducts() {
-  const filtered = currentFilter 
-    ? allProducts.filter(p => p.category === currentFilter) 
+  const filtered = currentFilter
+    ? allProducts.filter(p => p.category === currentFilter)
     : allProducts;
-  
+ 
   renderList(filtered);
   statusMsg.innerText = `${filtered.length} ITEMS`;
 }
-
 function renderList(products) {
   listContainer.innerHTML = products.map((p, i) => {
     const mainImage = p.images.find(img => img.type === 'main')?.url || '';
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
-
     return `
       <div class="list-item group" style="animation-delay:${i * 100}ms">
         <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg cursor-pointer" onclick="openGallery(${JSON.stringify(p.images.map(img => img.url))})">
@@ -285,33 +249,29 @@ function renderList(products) {
           </div>
           <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
         </div>
-
       </div>
     `;
   }).join('');
 }
-
 // ========== 画廊功能 ==========
 function openGallery(imageUrls) {
   if (!Array.isArray(imageUrls) || imageUrls.length === 0) return;
-  
+ 
   galleryState.images = imageUrls;
   galleryState.currentIndex = 0;
-  
+ 
   renderGalleryIndicator();
   loadGalleryImage();
-  
+ 
   viewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
 }
-
 function closeViewer() {
   viewer.classList.add('hidden');
   document.body.style.overflow = '';
   galleryState = { currentIndex: 0, images: [] };
   galleryIndicator.innerHTML = '';
 }
-
 function renderGalleryIndicator() {
   if (galleryState.images.length <= 1) {
     galleryIndicator.classList.add('hidden');
@@ -319,32 +279,28 @@ function renderGalleryIndicator() {
   }
   galleryIndicator.classList.remove('hidden');
   galleryIndicator.innerHTML = galleryState.images.map((_, index) => `
-    <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}" 
+    <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}"
          onclick="goToGalleryImage(${index})"></div>
   `).join('');
 }
-
 function goToGalleryImage(index) {
   galleryState.currentIndex = index;
   renderGalleryIndicator();
   loadGalleryImage();
 }
-
 function loadGalleryImage() {
   const url = galleryState.images[galleryState.currentIndex];
   viewerImg.src = url;
   viewerImg.referrerPolicy = "no-referrer";
-  
+ 
   viewerImg.onload = () => {
     const containerWidth = viewerContainer.clientWidth;
     const containerHeight = viewerContainer.clientHeight;
     const imgWidth = viewerImg.naturalWidth;
     const imgHeight = viewerImg.naturalHeight;
-
     const scaleX = containerWidth / imgWidth;
     const scaleY = containerHeight / imgHeight;
     const initialScale = Math.min(scaleX, scaleY, 1);
-
     state = {
       scale: initialScale,
       panning: false,
@@ -363,30 +319,23 @@ function loadGalleryImage() {
     updateTransform();
   };
 }
-
 // ========== 图片交互状态 ==========
 let state = { scale: 1, panning: false, x: 0, y: 0, minScale: 1, maxScale: 5, naturalWidth: 0, naturalHeight: 0 };
-
 const updateTransform = () => {
   viewerImg.style.transform = `translate(${state.x}px, ${state.y}px) scale(${state.scale})`;
 };
-
 // ========== 事件绑定 ==========
 filterAllBtn.addEventListener('click', showAllProducts);
-
 viewer.addEventListener('click', e => {
   if (e.target === viewer || e.target === viewerContainer) {
     closeViewer();
   }
 });
-
 viewerImg.addEventListener('click', e => {
   e.stopPropagation();
 });
-
 // 启动
 fetchProducts();
 </script>
-
 </body>
 </html>
