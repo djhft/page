@@ -204,17 +204,32 @@ async function fetchProducts() {
     // ✅ 修复：正确 UTF-8 解码
     const decoded = base64ToUtf8(fileMeta.content);
     const data = JSON.parse(decoded);
-    allProducts = data.map(item => ({
-      name: item.name || '无名商品',
-      price: item.price || 0,
-      length: (item.dimensions?.split(' x ')[0]) || '-',
-      width: (item.dimensions?.split(' x ')[1]) || '-',
-      height: (item.dimensions?.split(' x ')[2]) || null,
-      description: item.description || '',
-      category: item.category || '',
-      images: Array.isArray(item.images) ? item.images : [],
-      detailPath: getDetailPath(item)
-    }));
+    allProducts = data.map(item => {
+      // 处理图片URL，转换相对路径为完整URL
+      const processedImages = item.images.map(img => {
+        if (img.url.startsWith('http')) {
+          return img;
+        } else {
+          // 转换相对路径为完整URL
+          return {
+            ...img,
+            url: `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${img.url}`
+          };
+        }
+      });
+      
+      return {
+        name: item.name || '无名商品',
+        price: item.price || 0,
+        length: (item.dimensions?.split(' x ')[0]) || '-',
+        width: (item.dimensions?.split(' x ')[1]) || '-',
+        height: (item.dimensions?.split(' x ')[2]) || null,
+        description: item.description || '',
+        category: item.category || '',
+        images: processedImages,
+        detailPath: getDetailPath(item)
+      };
+    });
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     renderCategoryFilters();
     renderFilteredProducts();
@@ -232,14 +247,18 @@ function getDetailPath(item) {
   // 从主图路径提取目录和名称
   const mainImage = item.images.find(img => img.type === 'main');
   if (mainImage) {
+    // 从完整URL中提取路径部分
     const url = mainImage.url;
-    // 假设主图路径为 "蹲坑/2号_main.jpg"
-    const parts = url.split('/');
+    // 移除基础URL部分，获取相对路径
+    const relativePath = url.replace(`https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/`, '');
+    // 分割路径
+    const parts = relativePath.split('/');
     if (parts.length >= 2) {
-      const dir = parts.slice(0, -1).join('/'); // "蹲坑"
-      const fileName = parts[parts.length - 1]; // "2号_main.jpg"
-      const name = fileName.replace(/_.*$/, ''); // "2号"
-      return `${dir}/${name}_main.json`; // "蹲坑/2号_main.json"
+      const dir = parts.slice(0, -1).join('/'); // 目录
+      const fileName = parts[parts.length - 1]; // 文件名，如 "蹲坑/2号_main.jpg"
+      // 提取名称部分（去掉扩展名和类型标识）
+      const name = fileName.replace(/\.[^/.]+$/, "").replace(/_main$/, ""); // 移除扩展名和_main后缀
+      return `${dir}/${name}_main.json`; // 例如 "蹲坑/2号_main.json"
     }
   }
   return null;
@@ -248,25 +267,32 @@ function getDetailPath(item) {
 // ===== 获取详情页信息 =====
 async function fetchDetail(detailPath) {
   try {
-    // 构造详情文件的Gitee API URL
+    // 修正API URL构建方式
     const encodedPath = encodeURIComponent(detailPath);
     const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${encodedPath}`;
     
     const response = await fetch(apiUrl);
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      console.log(`详情文件不存在: ${detailPath}`);
+      return null;
     }
     
     const fileMeta = await response.json();
     const decoded = base64ToUtf8(fileMeta.content);
     const detailData = JSON.parse(decoded);
     
-    // 返回图片URL数组（包括主图和详细图）
-    return detailData.images.map(img => img.url);
+    // 处理详情图片URL，转换相对路径为完整URL
+    return detailData.images.map(img => {
+      if (img.url.startsWith('http')) {
+        return img.url;
+      } else {
+        return `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${img.url}`;
+      }
+    });
   } catch (error) {
     console.error('加载详情失败:', error);
-    // 如果加载详情失败，返回原始图片
-    return [];
+    // 如果加载详情失败，返回null
+    return null;
   }
 }
 
@@ -317,7 +343,9 @@ function renderFilteredProducts() {
 // ===== 商品列表 =====
 function renderList(products) {
   listContainer.innerHTML = products.map((p, i) => {
-    const mainImage = p.images.find(img => img.type === 'main')?.url || '';
+    // 获取主图URL
+    const mainImage = p.images.find(img => img.type === 'main')?.url || p.images[0]?.url || '';
+    
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
     
@@ -328,10 +356,12 @@ function renderList(products) {
     return `
       <div class="list-item group" style="animation-delay:${i * 100}ms">
         <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
+             data-product-id="${i}"
              data-detail-path="${p.detailPath || ''}"
              data-original-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
           <img src="${mainImage}" referrerpolicy="no-referrer"
-               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+               onerror="this.onerror=null;this.src='https://placehold.co/400x300/333333/cccccc?text=No+Image';">
         </div>
         <div class="mt-3 px-1 flex justify-between items-end gap-4">
           <div>
@@ -353,12 +383,12 @@ function renderList(products) {
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
         
+        // 如果有详情路径，尝试加载详情图
         if (detailPath) {
-          // 尝试加载详情页信息
           const detailImages = await fetchDetail(detailPath);
           
           if (detailImages && detailImages.length > 0) {
-            // 使用详情页的图片（包括主图和详细图）
+            // 使用详情页的图片
             openGallery(detailImages);
           } else {
             // 如果详情加载失败，使用原始图片
@@ -377,17 +407,7 @@ function renderList(products) {
 function openGallery(imageUrls) {
   if (!imageUrls.length) return;
   
-  // 转换相对路径为完整URL
-  const fullImageUrls = imageUrls.map(url => {
-    if (url.startsWith('http')) {
-      return url;
-    } else {
-      // 假设基础URL为仓库的raw链接
-      return `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${url}`;
-    }
-  });
-  
-  galleryState.images = fullImageUrls;
+  galleryState.images = imageUrls;
   galleryState.currentIndex = 0;
   loadGalleryImage();
   renderGalleryIndicators();
@@ -622,11 +642,17 @@ function closeViewer() {
 }
 
 function loadGalleryImage() {
-  viewerImg.src = galleryState.images[galleryState.currentIndex];
-  // 确保在图片加载完成后重置变换
-  viewerImg.onload = function() {
-    resetViewerTransform();
-  };
+  if (galleryState.currentIndex >= 0 && galleryState.currentIndex < galleryState.images.length) {
+    viewerImg.src = galleryState.images[galleryState.currentIndex];
+    // 确保在图片加载完成后重置变换
+    viewerImg.onload = function() {
+      resetViewerTransform();
+    };
+    viewerImg.onerror = function() {
+      this.onerror = null;
+      this.src = 'https://placehold.co/800x600/333333/cccccc?text=Image+Not+Found';
+    };
+  }
 }
 
 // ===== 事件绑定 =====
