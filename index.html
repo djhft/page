@@ -78,6 +78,9 @@
     .gallery-dot.active {
       background-color: white;
     }
+    .aspect-ratio-box {
+      aspect-ratio: 4 / 3;
+    }
   </style>
 </head>
 <body class="antialiased min-h-screen pb-20">
@@ -240,33 +243,35 @@ function renderList(products) {
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
     
-    // 创建容器元素
-    const container = document.createElement('div');
-    container.className = 'list-item group';
-    container.style.animationDelay = `${i * 100}ms`;
-    
-    container.innerHTML = `
-      <div class="relative w-full aspect-[4/3] rounded-2xl overflow-hidden bg-card-bg">
-        <img src="${mainImage}" referrerpolicy="no-referrer"
-             class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
-      </div>
-      <div class="mt-3 px-1 flex justify-between items-end gap-4">
-        <div>
-          <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
-          <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
-          ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
-          ${p.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>` : ''}
+    return `
+      <div class="list-item group" style="animation-delay:${i * 100}ms">
+        <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" data-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
+          <img src="${mainImage}" referrerpolicy="no-referrer"
+               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
         </div>
-        <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
+        <div class="mt-3 px-1 flex justify-between items-end gap-4">
+          <div>
+            <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
+            <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
+            ${p.category ? `<p class="text-xs text-gray-600 font-mono mt-1">分类：${p.category}</p>` : ''}
+            ${p.description ? `<p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>` : ''}
+          </div>
+          <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
+        </div>
       </div>
     `;
-    
-    // 添加点击事件监听器
-    const imageDiv = container.querySelector('.aspect-[4/3]');
-    imageDiv.onclick = () => openGallery(p.images.map(img => img.url));
-    
-    return container.outerHTML;
   }).join('');
+  
+  // 为所有图片容器添加点击事件监听器
+  setTimeout(() => {
+    document.querySelectorAll('.image-container').forEach(container => {
+      container.onclick = () => {
+        const encodedImages = container.getAttribute('data-images');
+        const imageUrls = JSON.parse(decodeURIComponent(encodedImages));
+        openGallery(imageUrls);
+      };
+    });
+  }, 100);
 }
 
 // ===== 画廊 =====
