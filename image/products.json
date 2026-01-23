@@ -1,0 +1,15 @@
+[
+  {
+    "name": "2号",
+    "price": "12",
+    "category": "蹲坑",
+    "description": "",
+    "dimensions": "12 x 12 x 12",
+    "images": [
+      {
+        "url": "https://raw.githubusercontent.com/djhft/page/main/image/dunkeng/2hao_main.jpg",
+        "type": "main"
+      }
+    ]
+  }
+]

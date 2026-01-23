@@ -1,0 +1,15 @@
+{
+  "name": "2号",
+  "price": "12",
+  "length": "12",
+  "width": "12",
+  "category": "dunkeng",
+  "height": "12",
+  "description": "",
+  "images": [
+    {
+      "url": "image/dunkeng/2hao_main.jpg",
+      "type": "main"
+    }
+  ]
+}
