@@ -153,10 +153,12 @@
   </div>
 </div>
 <script>
-// ===== Gitee 配置 =====
-const GITEE_OWNER = 'panzetao';
-const GITEE_REPO = 'image-bed';
+// ===== GitHub 配置（请修改为你的信息）=====
+const GITHUB_USERNAME = 'djhft';  // 替换为你的GitHub用户名
+const GITHUB_REPO = 'page';       // 替换为你的GitHub仓库名
+const GITHUB_BRANCH = 'main';     // GitHub分支（通常是main）
 const FILE_PATH = 'products.json';
+
 // ===== 全局变量 =====
 let allProducts = [];
 let categories = [];
@@ -189,37 +191,45 @@ function base64ToUtf8(base64) {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
+// ===== 构建GitHub URL =====
+function getGitHubRawUrl(path) {
+  // GitHub Raw文件地址
+  return `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${GITHUB_REPO}/${GITHUB_BRANCH}/${path}`;
+}
+
+function getGitHubApiUrl(path) {
+  // GitHub API地址
+  return `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
+}
+
 // ===== 获取 products.json =====
 async function fetchProducts() {
   loadingSpinner.classList.remove('hidden');
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
   try {
-    // 方案1：使用 Gitee API 替代 Raw 链接（避免 302）
-    // const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image/${FILE_PATH}`;
-
-    // 方案2：跨域代理兜底（如果 API 访问仍失败，取消注释下方）
-    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${FILE_PATH}`;
-
+    // 方案1：使用GitHub API
+    const apiUrl = getGitHubApiUrl(`image/${FILE_PATH}`);
+    
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json',
+        'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
       },
-      redirect: 'follow', // 强制跟随重定向
+      redirect: 'follow',
       cache: 'no-cache'
     });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
+    
     const fileMeta = await response.json();
     // ✅ 修复：正确 UTF-8 解码
     const decoded = base64ToUtf8(fileMeta.content);
     const data = JSON.parse(decoded);
-
+    
     allProducts = data.map(item => ({
       name: item.name || '无名商品',
       price: item.price || 0,
@@ -228,26 +238,29 @@ async function fetchProducts() {
       height: (item.dimensions?.split(' x ')[2]) || null,
       description: item.description || '',
       category: item.category || '',
-      images: Array.isArray(item.images) ? item.images : [],
+      images: Array.isArray(item.images) ? item.images.map(img => ({
+        url: img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url),
+        type: img.type
+      })) : [],
       detailPath: getDetailPath(item)
     }));
+    
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     renderCategoryFilters();
     renderFilteredProducts();
     loadingSpinner.classList.add('hidden');
+    statusMsg.innerText = `${allProducts.length} ITEMS`;
   } catch (error) {
     console.error('加载商品失败:', error);
-    // 降级方案：尝试直接 Raw 链接（带代理）
+    // 降级方案：尝试直接Raw链接
     try {
-      const rawUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${FILE_PATH}`;
-      const proxyRawUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
-      const fallbackRes = await fetch(proxyRawUrl);
-      if (!fallbackRes.ok) throw new Error('代理访问失败');
-
-      const fileMeta = await fallbackRes.json();
-      const decoded = base64ToUtf8(fileMeta.content);
-      const data = JSON.parse(decoded);
-
+      const rawUrl = getGitHubRawUrl(`image/${FILE_PATH}`);
+      const fallbackRes = await fetch(rawUrl, { cache: 'no-cache' });
+      
+      if (!fallbackRes.ok) throw new Error('Raw链接访问失败');
+      
+      const data = await fallbackRes.json();
+      
       allProducts = data.map(item => ({
         name: item.name || '无名商品',
         price: item.price || 0,
@@ -256,12 +269,17 @@ async function fetchProducts() {
         height: (item.dimensions?.split(' x ')[2]) || null,
         description: item.description || '',
         category: item.category || '',
-        images: Array.isArray(item.images) ? item.images : [],
+        images: Array.isArray(item.images) ? item.images.map(img => ({
+          url: img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url),
+          type: img.type
+        })) : [],
         detailPath: getDetailPath(item)
       }));
+      
       categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
       renderCategoryFilters();
       renderFilteredProducts();
+      statusMsg.innerText = `${allProducts.length} ITEMS`;
     } catch (fallbackError) {
       console.error('降级方案也失败:', fallbackError);
       statusMsg.innerText = "ERROR";
@@ -278,13 +296,23 @@ function getDetailPath(item) {
   const mainImage = item.images.find(img => img.type === 'main');
   if (mainImage) {
     const url = mainImage.url;
-    // 假设主图路径为 "蹲坑/2号_main.jpg"
-    const parts = url.split('/');
-    if (parts.length >= 2) {
-      const dir = parts.slice(0, -1).join('/'); // "蹲坑"
-      const fileName = parts[parts.length - 1]; // "2号_main.jpg"
-      const name = fileName.replace(/_.*$/, ''); // "2号"
-      return `${dir}/${name}_main.json`; // "蹲坑/2号_main.json"
+    // 处理完整URL和相对路径
+    let relativeUrl = url;
+    if (url.includes('raw.githubusercontent.com')) {
+      // 从完整URL提取相对路径
+      const parts = url.split(`${GITHUB_REPO}/${GITHUB_BRANCH}/`);
+      if (parts.length > 1) {
+        relativeUrl = parts[1];
+      }
+    }
+    
+    // 假设路径为 "image/分类/商品_main.jpg"
+    const parts = relativeUrl.split('/');
+    if (parts.length >= 3) {
+      const dir = parts.slice(0, -1).join('/'); // "image/分类"
+      const fileName = parts[parts.length - 1]; // "商品_main.jpg"
+      const name = fileName.replace(/_.*$/, ''); // "商品"
+      return `${dir}/${name}_main.json`; // "image/分类/商品_main.json"
     }
   }
   return null;
@@ -292,51 +320,43 @@ function getDetailPath(item) {
 
 // ===== 获取详情页信息 =====
 async function fetchDetail(detailPath) {
+  if (!detailPath) return [];
+  
   try {
-    let cleanPath = detailPath;
-    if (cleanPath.startsWith('/')) {
-      cleanPath = cleanPath.substring(1);
-    }
-    console.log('加载详情路径:', cleanPath);
-
-    // 使用 Gitee API 替代 Raw 链接
-    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/image/${cleanPath}?ref=master`;
+    // 使用GitHub API获取详情JSON
+    const apiUrl = getGitHubApiUrl(detailPath);
     const response = await fetch(apiUrl, {
       headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Mozilla/5.0'
       }
     });
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
+    
     const fileMeta = await response.json();
     const decoded = base64ToUtf8(fileMeta.content);
     const detailData = JSON.parse(decoded);
-
-    // 返回图片URL数组（包括主图和详细图）
-    return detailData.images.map(img => img.url);
+    
+    // 返回完整的图片URL
+    return detailData.images.map(img => 
+      img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url)
+    );
   } catch (error) {
-    console.error('加载详情失败，尝试代理:', error);
-    // 降级：跨域代理访问 Raw 链接
+    console.error('加载详情失败:', error);
+    // 降级：直接访问Raw链接
     try {
-      let cleanPath = detailPath;
-      if (cleanPath.startsWith('/')) {
-        cleanPath = cleanPath.substring(1);
-      }
-      const rawUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/image/${cleanPath}`;
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(rawUrl)}`;
-
-      const fallbackRes = await fetch(proxyUrl);
-      if (!fallbackRes.ok) throw new Error('代理访问失败');
-
-      const fileMeta = await fallbackRes.json();
-      const decoded = base64ToUtf8(fileMeta.content);
-      const detailData = JSON.parse(decoded);
-
-      return detailData.images.map(img => img.url);
+      const rawUrl = getGitHubRawUrl(detailPath);
+      const fallbackRes = await fetch(rawUrl);
+      
+      if (!fallbackRes.ok) throw new Error('Raw详情访问失败');
+      
+      const detailData = await fallbackRes.json();
+      return detailData.images.map(img => 
+        img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url)
+      );
     } catch (fallbackError) {
-      console.error('详情代理也失败:', fallbackError);
+      console.error('详情降级方案失败:', fallbackError);
       return [];
     }
   }
@@ -349,7 +369,7 @@ function renderCategoryFilters() {
       ${cat}
     </button>
   `).join('');
-
+  
   // 重新绑定分类过滤器事件
   document.querySelectorAll('.category-filter').forEach(btn => {
     btn.onclick = () => filterByCategory(btn.dataset.category);
@@ -392,18 +412,22 @@ function renderList(products) {
     const mainImage = p.images.find(img => img.type === 'main')?.url || '';
     let dimensions = `${p.length} × ${p.width}`;
     if (p.height) dimensions += ` × ${p.height}`;
-
+    
     // 如果没有描述，则显示分类信息
     let infoText = p.description || p.category;
     if (!infoText) infoText = '暂无描述';
-
+    
+    // 提取纯图片URL数组（用于画廊）
+    const imageUrls = p.images.map(img => img.url);
+    
     return `
       <div class="list-item group" style="animation-delay:${i * 100}ms">
         <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
              data-detail-path="${p.detailPath || ''}"
-             data-original-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
+             data-original-images="${encodeURIComponent(JSON.stringify(imageUrls))}">
           <img src="${mainImage}" referrerpolicy="no-referrer"
-               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
+               class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+               loading="lazy">
         </div>
         <div class="mt-3 px-1 flex justify-between items-end gap-4">
           <div>
@@ -416,7 +440,7 @@ function renderList(products) {
       </div>
     `;
   }).join('');
-
+  
   // 为所有图片容器添加点击事件监听器
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
@@ -424,11 +448,11 @@ function renderList(products) {
         const detailPath = container.getAttribute('data-detail-path');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
-
+        
         if (detailPath) {
           // 尝试加载详情页信息
           const detailImages = await fetchDetail(detailPath);
-
+          
           if (detailImages && detailImages.length > 0) {
             // 使用详情页的图片（包括主图和详细图）
             openGallery(detailImages);
@@ -448,43 +472,32 @@ function renderList(products) {
 // ===== 画廊 =====
 function openGallery(imageUrls) {
   if (!imageUrls.length) return;
-
-  // 转换相对路径为 Gitee API 路径（避免 Raw 重定向）
-  const fullImageUrls = imageUrls.map(url => {
-    if (url.startsWith('http')) {
-      return url;
-    } else {
-      // 方案：使用 Gitee 原始文件预览链接（替代 Raw）
-      return `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/blob/master/image/${url}?raw=true`;
-    }
-  });
-
-  galleryState.images = fullImageUrls;
+  
+  galleryState.images = imageUrls;
   galleryState.currentIndex = 0;
   loadGalleryImage();
   renderGalleryIndicators();
   viewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-
+  
   // 更新导航按钮状态
   updateNavButtons();
-
+  
   // 添加触摸事件用于缩放和平移
   setupTouchEvents();
 }
 
 function renderGalleryIndicators() {
-  const indicator = document.getElementById('gallery-indicator');
   if (galleryState.images.length <= 1) {
-    indicator.innerHTML = '';
+    galleryIndicator.innerHTML = '';
     return;
   }
-
-  indicator.innerHTML = galleryState.images.map((_, index) => `
+  
+  galleryIndicator.innerHTML = galleryState.images.map((_, index) => `
     <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}" 
          data-index="${index}"></div>
   `).join('');
-
+  
   // 绑定指示器点击事件
   document.querySelectorAll('.gallery-dot').forEach(dot => {
     dot.onclick = (e) => {
@@ -543,10 +556,10 @@ let currentY = 0;
 function setupTouchEvents() {
   const container = document.getElementById('viewer-container');
   const img = document.getElementById('viewer-img');
-
+  
   // 重置变换
   resetViewerTransform();
-
+  
   // 双击缩放
   img.addEventListener('dblclick', (e) => {
     e.preventDefault();
@@ -564,7 +577,7 @@ function setupTouchEvents() {
 
   // 单指拖拽
   let isDragging = false;
-
+  
   img.addEventListener('mousedown', startDrag);
   img.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
@@ -578,7 +591,7 @@ function setupTouchEvents() {
   function startDrag(e) {
     e.preventDefault();
     isDragging = true;
-
+    
     if (e.type === 'touchstart') {
       lastX = e.touches[0].clientX;
       lastY = e.touches[0].clientY;
@@ -586,16 +599,16 @@ function setupTouchEvents() {
       lastX = e.clientX;
       lastY = e.clientY;
     }
-
+    
     img.style.cursor = 'grabbing';
   }
 
   function drag(e) {
     if (!isDragging) return;
-
+    
     e.preventDefault();
     let clientX, clientY;
-
+    
     if (e.type === 'mousemove') {
       clientX = e.clientX;
       clientY = e.clientY;
@@ -603,17 +616,17 @@ function setupTouchEvents() {
       clientX = e.touches[0].clientX;
       clientY = e.touches[0].clientY;
     }
-
+    
     if (clientX !== undefined && clientY !== undefined) {
       const deltaX = clientX - lastX;
       const deltaY = clientY - lastY;
-
+      
       currentX += deltaX;
       currentY += deltaY;
-
+      
       lastX = clientX;
       lastY = clientY;
-
+      
       applyTransform();
     }
   }
@@ -642,14 +655,14 @@ function setupTouchEvents() {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-
+      
       const scaleDelta = currentDistance / initialDistance;
       currentScale = initialScale * scaleDelta;
-
+      
       // 限制最大缩放比例
       if (currentScale > 5) currentScale = 5;
       if (currentScale < 0.5) currentScale = 0.5;
-
+      
       applyTransform();
     }
   }
@@ -668,7 +681,7 @@ function setupTouchEvents() {
       pinch(e);
     }
   }, { passive: false });
-
+  
   // 点击容器关闭
   container.addEventListener('click', (e) => {
     if (e.target === container) {
@@ -698,6 +711,14 @@ function loadGalleryImage() {
   // 确保在图片加载完成后重置变换
   viewerImg.onload = function() {
     resetViewerTransform();
+  };
+  // 图片加载失败时的处理
+  viewerImg.onerror = function() {
+    console.error('图片加载失败:', galleryState.images[galleryState.currentIndex]);
+    // 尝试下一张图片
+    if (galleryState.currentIndex < galleryState.images.length - 1) {
+      nextImage();
+    }
   };
 }
 
