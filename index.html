@@ -166,6 +166,19 @@ let galleryState = {
   images: []
 };
 
+// ===== 重定向配置 =====
+const REDIRECT_CONFIG = {
+  // URL参数重定向的白名单（防止恶意跳转）
+  allowedRedirectDomains: ['gitee.com', 'your-domain.com'],
+  // 旧路径映射新路径（根据实际需求调整）
+  oldToNewPathMap: {
+    '/old-category/1': '蹲坑', // 旧路径→新分类
+    '#product-2': '2号' // 旧哈希→商品名称
+  },
+  // 无数据时的备用页面
+  fallbackUrl: 'https://gitee.com/panzetao/image-bed/raw/master/image/empty-gallery.html'
+};
+
 // DOM 引用
 const listContainer = document.getElementById('product-list');
 const viewer = document.getElementById('image-viewer');
@@ -187,6 +200,46 @@ function base64ToUtf8(base64) {
   const binary = atob(base64.replace(/\s/g, ''));
   const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
   return new TextDecoder('utf-8').decode(bytes);
+}
+
+// ===== 重定向处理函数 =====
+function handleRedirects() {
+  // 场景1：处理URL参数 redirect（示例：?redirect=https://xxx.com）
+  const urlParams = new URLSearchParams(window.location.search);
+  const redirectParam = urlParams.get('redirect');
+  if (redirectParam) {
+    try {
+      const redirectUrl = new URL(redirectParam);
+      // 验证白名单，防止跨站恶意跳转
+      if (REDIRECT_CONFIG.allowedRedirectDomains.includes(redirectUrl.hostname)) {
+        window.location.href = redirectParam;
+        return; // 终止后续逻辑
+      }
+    } catch (e) {
+      console.error('无效的重定向URL:', e);
+    }
+  }
+
+  // 场景2：处理旧路径/哈希重定向
+  const currentHash = window.location.hash;
+  const currentPath = window.location.pathname;
+  // 匹配旧哈希
+  if (REDIRECT_CONFIG.oldToNewPathMap[currentHash]) {
+    const targetCategory = REDIRECT_CONFIG.oldToNewPathMap[currentHash];
+    // 自动筛选对应分类
+    setTimeout(() => {
+      const targetBtn = document.querySelector(`.category-filter[data-category="${targetCategory}"]`);
+      if (targetBtn) targetBtn.click();
+    }, 500);
+  }
+  // 匹配旧路径
+  if (REDIRECT_CONFIG.oldToNewPathMap[currentPath]) {
+    const targetCategory = REDIRECT_CONFIG.oldToNewPathMap[currentPath];
+    setTimeout(() => {
+      const targetBtn = document.querySelector(`.category-filter[data-category="${targetCategory}"]`);
+      if (targetBtn) targetBtn.click();
+    }, 500);
+  }
 }
 
 // ===== 获取 products.json =====
@@ -213,7 +266,8 @@ async function fetchProducts() {
       description: item.description || '',
       category: item.category || '',
       images: Array.isArray(item.images) ? item.images : [],
-      detailPath: getDetailPath(item)
+      detailPath: getDetailPath(item),
+      redirectUrl: item.redirectUrl || '' // 新增：解析商品重定向URL
     }));
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     renderCategoryFilters();
@@ -224,6 +278,14 @@ async function fetchProducts() {
     statusMsg.innerText = "ERROR";
     loadingSpinner.classList.add('hidden');
     errorMsg.classList.remove('hidden');
+    
+    // 新增：无商品数据时重定向到备用页面
+    if (allProducts.length === 0) {
+      statusMsg.innerText = "NO DATA, REDIRECTING...";
+      setTimeout(() => {
+        window.location.href = REDIRECT_CONFIG.fallbackUrl;
+      }, 3000); // 3秒后跳转，给用户提示时间
+    }
   }
 }
 
@@ -339,7 +401,8 @@ function renderList(products) {
       <div class="list-item group" style="animation-delay:${i * 100}ms">
         <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
              data-detail-path="${p.detailPath || ''}"
-             data-original-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}">
+             data-original-images="${encodeURIComponent(JSON.stringify(p.images.map(img => img.url)))}"
+             data-redirect-url="${p.redirectUrl || ''}"> <!-- 新增：重定向URL属性 -->
           <img src="${mainImage}" referrerpolicy="no-referrer"
                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105">
         </div>
@@ -359,6 +422,13 @@ function renderList(products) {
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
       container.onclick = async () => {
+        // 新增：优先处理重定向
+        const redirectUrl = container.getAttribute('data-redirect-url');
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+          return; // 终止画廊逻辑
+        }
+
         const detailPath = container.getAttribute('data-detail-path');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
@@ -643,6 +713,7 @@ function loadGalleryImage() {
 filterAllBtn.onclick = showAllProducts;
 
 // ===== 启动 =====
+handleRedirects(); // 先执行重定向检测
 fetchProducts();
 </script>
 </body>
