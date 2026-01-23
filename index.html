@@ -169,7 +169,8 @@ async function fetchProducts() {
   errorMsg.classList.add('hidden');
 
   try {
-    const apiUrl = `https://gitee.com/${GITEE_OWNER}/${GITEE_REPO}/raw/master/${FILE_PATH}`;
+    
+    const apiUrl = `https://gitee.com/api/v5/repos/${GITEE_OWNER}/${GITEE_REPO}/contents/${FILE_PATH}`;
     const response = await fetch(apiUrl);
 
     if (!response.ok) {
