@@ -1,0 +1,15 @@
+{
+  "name": "5号s",
+  "price": "40",
+  "length": "12",
+  "width": "12",
+  "category": "dunkeng",
+  "height": "12",
+  "description": "sss",
+  "images": [
+    {
+      "url": "image/dunkeng/5haos_main.jpg",
+      "type": "main"
+    }
+  ]
+}

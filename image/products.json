@@ -15,5 +15,18 @@
         "type": "detail"
       }
     ]
+  },
+  {
+    "name": "5号s",
+    "price": "40",
+    "category": "蹲坑",
+    "description": "sss",
+    "dimensions": "12 x 12 x 12",
+    "images": [
+      {
+        "url": "https://raw.githubusercontent.com/djhft/page/main/image/dunkeng/5haos_main.jpg",
+        "type": "main"
+      }
+    ]
   }
 ]
