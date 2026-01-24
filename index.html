@@ -153,10 +153,10 @@
   </div>
 </div>
 <script>
-// ===== GitHub 配置（请修改为你的信息）=====
-const GITHUB_USERNAME = 'djhft';  // 替换为你的GitHub用户名
-const GITHUB_REPO = 'page';       // 替换为你的GitHub仓库名
-const GITHUB_BRANCH = 'main';     // GitHub分支（通常是main）
+// ===== Gitee 配置（请修改为你的信息）=====
+const GITEE_USERNAME = 'panzetao';  // 替换为你的Gitee用户名
+const GITEE_REPO = 'image-bed';     // 替换为你的Gitee仓库名
+const GITEE_BRANCH = 'master';      // Gitee分支（通常是master）
 const FILE_PATH = 'products.json';
 
 // ===== 全局变量 =====
@@ -191,15 +191,15 @@ function base64ToUtf8(base64) {
   return new TextDecoder('utf-8').decode(bytes);
 }
 
-// ===== 构建GitHub URL =====
-function getGitHubRawUrl(path) {
-  // GitHub Raw文件地址
-  return `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${GITHUB_REPO}/${GITHUB_BRANCH}/${path}`;
+// ===== 构建Gitee URL =====
+function getGiteeRawUrl(path) {
+  // Gitee Raw文件地址
+  return `https://gitee.com/ $ {GITEE_USERNAME}/ $ {GITEE_REPO}/raw/ $ {GITEE_BRANCH}/ $ {path}`;
 }
 
-function getGitHubApiUrl(path) {
-  // GitHub API地址
-  return `https://api.github.com/repos/${GITHUB_USERNAME}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_BRANCH}`;
+function getGiteeApiUrl(path) {
+  // Gitee API地址 (注意：Gitee API 路径略有不同)
+  return `https://gitee.com/api/v5/repos/ $ {GITEE_USERNAME}/ $ {GITEE_REPO}/contents/ $ {path}?ref= $ {GITEE_BRANCH}`;
 }
 
 // ===== 获取 products.json =====
@@ -208,13 +208,13 @@ async function fetchProducts() {
   statusMsg.innerText = "LOADING...";
   errorMsg.classList.add('hidden');
   try {
-    // 方案1：使用GitHub API
-    const apiUrl = getGitHubApiUrl(`image/${FILE_PATH}`);
+    // 方案1：使用Gitee API (注意：Gitee API 可能需要认证，这里先尝试无认证访问)
+    const apiUrl = getGiteeApiUrl(`image/ $ {FILE_PATH}`);
     
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
-        'Accept': 'application/vnd.github.v3+json',
+        'Accept': 'application/vnd.gitee.v3+json', // Gitee API Accept header
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
       },
       redirect: 'follow',
@@ -222,7 +222,8 @@ async function fetchProducts() {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+        console.warn('Gitee API access failed (may require auth), trying raw URL...');
+        throw new Error(`HTTP  $ {response.status}`);
     }
     
     const fileMeta = await response.json();
@@ -239,7 +240,7 @@ async function fetchProducts() {
       description: item.description || '',
       category: item.category || '',
       images: Array.isArray(item.images) ? item.images.map(img => ({
-        url: img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url),
+        url: img.url.startsWith('http') ? img.url : getGiteeRawUrl(img.url),
         type: img.type
       })) : [],
       detailPath: getDetailPath(item)
@@ -249,15 +250,15 @@ async function fetchProducts() {
     renderCategoryFilters();
     renderFilteredProducts();
     loadingSpinner.classList.add('hidden');
-    statusMsg.innerText = `${allProducts.length} ITEMS`;
+    statusMsg.innerText = ` $ {allProducts.length} ITEMS`;
   } catch (error) {
-    console.error('加载商品失败:', error);
-    // 降级方案：尝试直接Raw链接
+    console.error('通过 Gitee API 加载商品失败或需要认证:', error);
+    // 降级方案：尝试直接Raw链接 (这是 Gitee 最常用的方式)
     try {
-      const rawUrl = getGitHubRawUrl(`image/${FILE_PATH}`);
+      const rawUrl = getGiteeRawUrl(`image/ $ {FILE_PATH}`);
       const fallbackRes = await fetch(rawUrl, { cache: 'no-cache' });
       
-      if (!fallbackRes.ok) throw new Error('Raw链接访问失败');
+      if (!fallbackRes.ok) throw new Error('Gitee Raw链接访问失败');
       
       const data = await fallbackRes.json();
       
@@ -270,7 +271,7 @@ async function fetchProducts() {
         description: item.description || '',
         category: item.category || '',
         images: Array.isArray(item.images) ? item.images.map(img => ({
-          url: img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url),
+          url: img.url.startsWith('http') ? img.url : getGiteeRawUrl(img.url),
           type: img.type
         })) : [],
         detailPath: getDetailPath(item)
@@ -279,7 +280,7 @@ async function fetchProducts() {
       categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
       renderCategoryFilters();
       renderFilteredProducts();
-      statusMsg.innerText = `${allProducts.length} ITEMS`;
+      statusMsg.innerText = ` $ {allProducts.length} ITEMS`;
     } catch (fallbackError) {
       console.error('降级方案也失败:', fallbackError);
       statusMsg.innerText = "ERROR";
@@ -298,9 +299,9 @@ function getDetailPath(item) {
     const url = mainImage.url;
     // 处理完整URL和相对路径
     let relativeUrl = url;
-    if (url.includes('raw.githubusercontent.com')) {
+    if (url.includes('gitee.com') && url.includes('/raw/')) {
       // 从完整URL提取相对路径
-      const parts = url.split(`${GITHUB_REPO}/${GITHUB_BRANCH}/`);
+      const parts = url.split(` $ {GITEE_REPO}/raw/ $ {GITEE_BRANCH}/`);
       if (parts.length > 1) {
         relativeUrl = parts[1];
       }
@@ -311,8 +312,8 @@ function getDetailPath(item) {
     if (parts.length >= 3) {
       const dir = parts.slice(0, -1).join('/'); // "image/分类"
       const fileName = parts[parts.length - 1]; // "商品_main.jpg"
-      const name = fileName.replace(/_.*$/, ''); // "商品"
-      return `${dir}/${name}_main.json`; // "image/分类/商品_main.json"
+      const name = fileName.replace(/_.* $ /, ''); // "商品"
+      return ` $ {dir}/ $ {name}_main.json`; // "image/分类/商品_main.json"
     }
   }
   return null;
@@ -323,50 +324,31 @@ async function fetchDetail(detailPath) {
   if (!detailPath) return [];
   
   try {
-    // 使用GitHub API获取详情JSON
-    const apiUrl = getGitHubApiUrl(detailPath);
-    const response = await fetch(apiUrl, {
-      headers: {
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'Mozilla/5.0'
-      }
-    });
-
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    // 使用Gitee Raw链接获取详情JSON (Gitee API可能需要认证，优先使用Raw)
+    const rawUrl = getGiteeRawUrl(detailPath);
+    const response = await fetch(rawUrl);
     
-    const fileMeta = await response.json();
-    const decoded = base64ToUtf8(fileMeta.content);
-    const detailData = JSON.parse(decoded);
+    if (!response.ok) throw new Error('Gitee Raw详情访问失败');
     
-    // 返回完整的图片URL
+    const detailData = await response.json();
     return detailData.images.map(img => 
-      img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url)
+      img.url.startsWith('http') ? img.url : getGiteeRawUrl(img.url)
     );
   } catch (error) {
     console.error('加载详情失败:', error);
-    // 降级：直接访问Raw链接
-    try {
-      const rawUrl = getGitHubRawUrl(detailPath);
-      const fallbackRes = await fetch(rawUrl);
-      
-      if (!fallbackRes.ok) throw new Error('Raw详情访问失败');
-      
-      const detailData = await fallbackRes.json();
-      return detailData.images.map(img => 
-        img.url.startsWith('http') ? img.url : getGitHubRawUrl(img.url)
-      );
-    } catch (fallbackError) {
-      console.error('详情降级方案失败:', fallbackError);
-      return [];
-    }
+    // 降级：如果还有其他方式可以获取，可以在这里尝试
+    // 但通常直接访问Raw是最可靠的方法
+    console.error('详情加载失败，返回空数组');
+    return [];
   }
 }
+
 
 // ===== 分类 =====
 function renderCategoryFilters() {
   categoryFilters.innerHTML = categories.map(cat => `
-    <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category="${cat}">
-      ${cat}
+    <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category=" $ {cat}">
+       $ {cat}
     </button>
   `).join('');
   
@@ -403,15 +385,15 @@ function renderFilteredProducts() {
     ? allProducts.filter(p => p.category === currentFilter)
     : allProducts;
   renderList(filtered);
-  statusMsg.innerText = `${filtered.length} ITEMS`;
+  statusMsg.innerText = ` $ {filtered.length} ITEMS`;
 }
 
 // ===== 商品列表 =====
 function renderList(products) {
   listContainer.innerHTML = products.map((p, i) => {
     const mainImage = p.images.find(img => img.type === 'main')?.url || '';
-    let dimensions = `${p.length} × ${p.width}`;
-    if (p.height) dimensions += ` × ${p.height}`;
+    let dimensions = ` $ {p.length} ×  $ {p.width}`;
+    if (p.height) dimensions += ` ×  $ {p.height}`;
     
     // 如果没有描述，则显示分类信息
     let infoText = p.description || p.category;
@@ -421,21 +403,21 @@ function renderList(products) {
     const imageUrls = p.images.map(img => img.url);
     
     return `
-      <div class="list-item group" style="animation-delay:${i * 100}ms">
+      <div class="list-item group" style="animation-delay: $ {i * 100}ms">
         <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
-             data-detail-path="${p.detailPath || ''}"
-             data-original-images="${encodeURIComponent(JSON.stringify(imageUrls))}">
-          <img src="${mainImage}" referrerpolicy="no-referrer"
+             data-detail-path=" $ {p.detailPath || ''}"
+             data-original-images=" $ {encodeURIComponent(JSON.stringify(imageUrls))}">
+          <img src=" $ {mainImage}" referrerpolicy="no-referrer"
                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                loading="lazy">
         </div>
         <div class="mt-3 px-1 flex justify-between items-end gap-4">
           <div>
-            <h3 class="font-serif text-lg font-bold text-white">${p.name}</h3>
-            <p class="text-xs text-gray-500 font-mono mt-1">尺寸：${dimensions}</p>
-            <p class="text-xs text-gray-400 mt-1 line-clamp-2">${p.description}</p>
+            <h3 class="font-serif text-lg font-bold text-white"> $ {p.name}</h3>
+            <p class="text-xs text-gray-500 font-mono mt-1">尺寸： $ {dimensions}</p>
+            <p class="text-xs text-gray-400 mt-1 line-clamp-2"> $ {p.description}</p>
           </div>
-          <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥${p.price}</span>
+          <span class="text-4xl font-bold text-blue-400 whitespace-nowrap">¥ $ {p.price}</span>
         </div>
       </div>
     `;
@@ -494,8 +476,8 @@ function renderGalleryIndicators() {
   }
   
   galleryIndicator.innerHTML = galleryState.images.map((_, index) => `
-    <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}" 
-         data-index="${index}"></div>
+    <div class="gallery-dot  $ {index === galleryState.currentIndex ? 'active' : ''}" 
+         data-index=" $ {index}"></div>
   `).join('');
   
   // 绑定指示器点击事件
@@ -668,7 +650,7 @@ function setupTouchEvents() {
   }
 
   function applyTransform() {
-    img.style.transform = `translate(${currentX}px, ${currentY}px) scale(${currentScale})`;
+    img.style.transform = `translate( $ {currentX}px,  $ {currentY}px) scale( $ {currentScale})`;
   }
 
   // 添加事件监听器
