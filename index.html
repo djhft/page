@@ -155,10 +155,11 @@
 <script>
 // ===== Gitee 配置（请修改为你的信息）=====
 const GITEE_CONFIG = {
-    USERNAME: 'panzetao',  // 替换为你的Gitee用户名
-    REPO: 'image-bed',     // 替换为你的Gitee仓库名
-    BRANCH: 'master',      // Gitee分支（通常是master）
-    BASE_PATH: 'image/'    // 文件在仓库中的基础路径，例如 'image/'
+    USERNAME: 'panzetao',       // 替换为你的Gitee用户名
+    REPO: 'image-bed',          // 替换为你的Gitee仓库名
+    BRANCH: 'master',           // Gitee分支（通常是master）
+    BASE_PATH: 'image/',        // 文件在仓库中的基础路径，例如 'image/'
+    ACCESS_TOKEN: 'YOUR_GITEE_ACCESS_TOKEN' // 在这里填入你的 Gitee Access Token
 };
 
 // 构建Gitee URL的辅助函数
@@ -209,13 +210,14 @@ async function fetchProducts() {
   errorMsg.classList.add('hidden');
   const filePath = ` $ {GITEE_CONFIG.BASE_PATH}products.json`;
   try {
-    // 方案1：使用Gitee API (注意：Gitee API 可能需要认证，这里先尝试无认证访问)
+    // 方案1：使用Gitee API (现在带上Access Token进行认证)
     const apiUrl = getGiteeApiUrl(filePath);
     
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
         'Accept': 'application/vnd.gitee.v3+json', // Gitee API Accept header
+        'Authorization': `Bearer  $ {GITEE_CONFIG.ACCESS_TOKEN}`, // 添加 Bearer Token 认证
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
       },
       redirect: 'follow',
@@ -223,7 +225,7 @@ async function fetchProducts() {
     });
 
     if (!response.ok) {
-        console.warn('Gitee API access failed (may require auth), trying raw URL...');
+        console.warn('Gitee API access failed with token, trying raw URL...');
         throw new Error(`HTTP  $ {response.status}`);
     }
     
@@ -253,8 +255,8 @@ async function fetchProducts() {
     loadingSpinner.classList.add('hidden');
     statusMsg.innerText = ` $ {allProducts.length} ITEMS`;
   } catch (error) {
-    console.error('通过 Gitee API 加载商品失败或需要认证:', error);
-    // 降级方案：尝试直接Raw链接 (这是 Gitee 最常用的方式)
+    console.error('通过 Gitee API 加载商品失败或Token无效:', error);
+    // 降级方案：尝试直接Raw链接 (这是 Gitee 最常用的方式，通常不需要Token)
     try {
       const rawUrl = getGiteeRawUrl(filePath);
       const fallbackRes = await fetch(rawUrl, { cache: 'no-cache' });
@@ -355,7 +357,7 @@ async function fetchDetail(detailPath) {
 function renderCategoryFilters() {
   categoryFilters.innerHTML = categories.map(cat => `
     <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category=" $ {cat}">
-        $ {cat}
+         $ {cat}
     </button>
   `).join('');
   
