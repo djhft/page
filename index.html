@@ -279,7 +279,8 @@ function getDetailPath(item) {
       const dir = parts.slice(0, -1).join('/'); // "image/分类"
       const fileName = parts[parts.length - 1]; // "商品_main.jpg"
       // 提取商品名（去除后缀，如 _main.jpg）
-      const name = fileName.replace(/(_\w+)\.(\w+) $ /, '');
+      const name = fileName.replace(/_main.*$/, '');
+      
       // 构造详情JSON路径
       return `${dir}/${name}_main.json`; // "image/分类/商品_main.json"
     }
@@ -299,6 +300,7 @@ async function fetchDetail(detailPath) {
     if (!response.ok) throw new Error('Gitee Raw详情访问失败');
     
     const detailData = await response.json();
+    
     // 确保 detailData.images 存在且为数组
     if (!Array.isArray(detailData.images)) {
         console.error('详情文件格式错误，images字段不是数组:', detailData);
@@ -400,6 +402,7 @@ function renderList(products) {
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
       container.onclick = async () => {
+        
         const detailPath = container.getAttribute('data-detail-path');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
