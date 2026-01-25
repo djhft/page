@@ -293,11 +293,15 @@ async function fetchDetail(detailPath) {
   if (!detailPath) return [];
   
   try {
+    console.log(detailPath);
+    
     // 使用Gitee Raw链接获取详情JSON (Gitee API可能需要认证，优先使用Raw)
     const rawUrl = getGiteeApiUrl(detailPath);
     console.log(rawUrl);
     
     const response = await fetch(rawUrl);
+    
+
     
     if (!response.ok) throw new Error('Gitee Raw详情访问失败');
     
@@ -410,24 +414,18 @@ function renderList(products) {
         const detailPath = container.getAttribute('data-detail-path').replace(/\s+/g, '');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
-        console.log(detailPath);
-        
 
         if (detailPath) {
           // 尝试加载详情页信息
           const detailImages = await fetchDetail(detailPath);
-          console.log("111");
-          
           
           if (detailImages && detailImages.length > 0) {
             // 使用详情页的图片（包括主图和详细图）
             openGallery(detailImages);
-            console.log("222");
             
           } else {
             // 如果详情加载失败，使用原始图片
             openGallery(originalImages);
-            console.log("333");
             
           }
         } else {
@@ -677,14 +675,25 @@ function closeViewer() {
 }
 
 function loadGalleryImage() {
+  console.log(viewerImg.src);
+  
   viewerImg.src = galleryState.images[galleryState.currentIndex];
   // 确保在图片加载完成后重置变换
   viewerImg.onload = function() {
     resetViewerTransform();
   };
+
   // 图片加载失败时的处理
   viewerImg.onerror = function() {
     console.error('图片加载失败:', galleryState.images[galleryState.currentIndex]);
+    const regex = /\/raw\/master\/(.*)/;
+    const url = viewerImg.src;
+    const match = url.match(regex);
+    if (match && match[1]) {
+      const fallbackUrl = getGiteeApiUrl(match[1]);
+      console.log('尝试备用URL:', fallbackUrl);
+      viewerImg.src = fallbackUrl;
+    }
     // 尝试下一张图片
     if (galleryState.currentIndex < galleryState.images.length - 1) {
       nextImage();
