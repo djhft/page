@@ -176,8 +176,9 @@ let categories = [];
 let currentFilter = null;
 let galleryState = {
   currentIndex: 0,
-  images: []
+  images: [] // 这里存储的是可以直接用于 img src 的 URL (可能是 Raw URL 或者转换后的 Data URL)
 };
+let apiImageCache = new Map(); // 缓存 API URL -> Data URL 的映射，避免重复请求
 
 // DOM 引用
 const listContainer = document.getElementById('product-list');
@@ -192,6 +193,76 @@ const categoryFilters = document.getElementById('category-filters');
 const galleryIndicator = document.getElementById('gallery-indicator');
 const prevBtn = document.getElementById('prev-btn');
 const nextBtn = document.getElementById('next-btn');
+
+// =====================
+// ✅ 新增：将 Gitee API URL 转换为 Data URL
+// =====================
+async function convertApiUrlToDataUrl(apiUrl) {
+    if (apiImageCache.has(apiUrl)) {
+        // console.log("Cache hit for:", apiUrl);
+        return apiImageCache.get(apiUrl);
+    }
+
+    try {
+        // console.log("Fetching API URL:", apiUrl);
+        const response = await fetch(apiUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/vnd.gitee.v3+json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+            },
+            redirect: 'follow',
+            cache: 'no-cache'
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} - ${response.statusText}`);
+        }
+
+        const jsonData = await response.json();
+        if (!jsonData.content) {
+            throw new Error('API response does not contain "content" field.');
+        }
+
+        // Base64 解码
+        const binaryString = atob(jsonData.content.replace(/\s/g, ''));
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // 推断 MIME 类型 (根据文件扩展名)
+        let mimeType = 'application/octet-stream'; // 默认类型
+        if (jsonData.download_url) {
+            const urlObj = new URL(jsonData.download_url);
+            const pathname = urlObj.pathname.toLowerCase();
+            if (pathname.endsWith('.jpg') || pathname.endsWith('.jpeg')) {
+                mimeType = 'image/jpeg';
+            } else if (pathname.endsWith('.png')) {
+                mimeType = 'image/png';
+            } else if (pathname.endsWith('.gif')) {
+                mimeType = 'image/gif';
+            } else if (pathname.endsWith('.webp')) {
+                mimeType = 'image/webp';
+            }
+            // 可以根据需要添加更多类型
+        }
+
+        // 创建 Blob
+        const blob = new Blob([bytes], { type: mimeType });
+        const dataUrl = URL.createObjectURL(blob);
+
+        // 缓存结果
+        apiImageCache.set(apiUrl, dataUrl);
+
+        return dataUrl;
+    } catch (error) {
+        console.error('Error converting API URL to Data URL:', apiUrl, error);
+        // 返回一个占位符或错误图片的 Data URL
+        // 这里返回一个简单的红色方块 SVG Data URL 作为错误提示
+        return "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0icmVkIiAvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1zaXplPSIxMiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiPlVSTFxyblRva2VuPC90ZXh0Pjwvc3ZnPg==";
+    }
+}
 
 // =====================
 // ✅ 修复点：UTF-8 Base64 解码
@@ -211,7 +282,7 @@ async function fetchProducts() {
   try {
     // 方案1：使用Gitee API (注意：Gitee API 可能需要认证，这里先尝试无认证访问)
     const apiUrl = getGiteeApiUrl(filePath);
-    
+
     const response = await fetch(apiUrl, {
       method: 'GET',
       headers: {
@@ -221,33 +292,53 @@ async function fetchProducts() {
       redirect: 'follow',
       cache: 'no-cache'
     });
-    
+
 
     if (!response.ok) {
         console.warn('Gitee API access failed (may require auth), trying raw URL...');
         throw new Error(`HTTP ${response.status}`);
     }
-    
+
     const fileMeta = await response.json(); // 1. 解析 API 返回的元数据 JSON
     const decodedContent = base64ToUtf8(fileMeta.content); // 2. 解码 content 字段
     const actualProductData = JSON.parse(decodedContent); // 3. 解析解码后的产品数据
-    
-    allProducts = actualProductData.map(item => ({
-      name: item.name || '无名商品',
-      price: item.price || 0,
-      length: (item.dimensions?.split(' x ')[0]) || '-',
-      width: (item.dimensions?.split(' x ')[1]) || '-',
-      height: (item.dimensions?.split(' x ')[2]) || null,
-      description: item.description || '',
-      category: item.category || '',
-      images: Array.isArray(item.images) ? item.images.map(img => ({
-        url: img.url.startsWith('http') ? img.url : getGiteeRawUrl(img.url),
-        type: img.type
-      })) : [],
-      detailPath: getDetailPath(item)
+
+    // 为每个商品的图片预处理，如果是 API URL，则转换为 Data URL
+    allProducts = await Promise.all(actualProductData.map(async (item) => {
+      const processedItem = {
+        name: item.name || '无名商品',
+        price: item.price || 0,
+        length: (item.dimensions?.split(' x ')[0]) || '-',
+        width: (item.dimensions?.split(' x ')[1]) || '-',
+        height: (item.dimensions?.split(' x ')[2]) || null,
+        description: item.description || '',
+        category: item.category || '',
+        // images: [], // 初始化为空数组
+        detailPath: getDetailPath(item) // 保持原有逻辑，但可能无效
+      };
+
+      processedItem.images = await Promise.all((item.images || []).map(async (img) => {
+        let processedUrl = img.url;
+        // 检查是否是 Gitee API URL
+        if (img.url.startsWith('https://gitee.com/api/v5/repos/')) {
+            // console.log("Converting API URL:", img.url);
+            processedUrl = await convertApiUrlToDataUrl(img.url);
+        } else if (!img.url.startsWith('http')) {
+            // 如果不是 HTTP URL，也不是 API URL，假设是相对路径，转换为 Raw URL
+            processedUrl = getGiteeRawUrl(img.url);
+        }
+        // 如果已经是其他外部 URL，保持不变
+        return {
+            url: processedUrl,
+            type: img.type
+        };
+      }));
+
+      return processedItem;
     }));
-    
-    
+
+    console.log("Processed All Products:", allProducts);
+
     categories = [...new Set(allProducts.map(p => p.category).filter(cat => cat.trim()))].sort();
     renderCategoryFilters();
     renderFilteredProducts();
@@ -255,22 +346,40 @@ async function fetchProducts() {
     statusMsg.innerText = `${allProducts.length} ITEMS`;
   } catch (error) {
     console.error('通过 Gitee API 加载商品失败或需要认证:', error);
+    errorMsg.classList.remove('hidden');
+    loadingSpinner.classList.add('hidden');
+    statusMsg.innerText = "LOAD ERROR";
   }
 }
 
-// ===== 提取详情路径 =====
+// ===== 提取详情路径 (保持原有逻辑，但可能因 API URL 而失效) =====
 function getDetailPath(item) {
   // 从主图路径提取目录和名称
   const mainImage = item.images.find(img => img.type === 'main');
-  if (mainImage) {
-    const url = mainImage.url;
+  if (mainImage && mainImage.url) { // 检查 mainImage 和 url 是否存在
+    const url = mainImage.url; // 这里拿到的是已经处理过的 URL (Data URL 或 Raw URL 或外部 URL)
+    // 如果 url 是 Data URL，则无法从中提取路径
+    if (url.startsWith('data:')) {
+        console.warn("Cannot extract path from Data URL for detailPath.");
+        return null;
+    }
+    // 如果 url 是 Raw URL 或其他外部 URL，尝试提取
     let relativeUrl = url;
-    // 如果是完整URL，尝试提取相对路径部分
     if (url.includes('gitee.com') && url.includes('/raw/')) {
         const repoPath = `${GITEE_CONFIG.USERNAME}/${GITEE_CONFIG.REPO}/raw/${GITEE_CONFIG.BRANCH}/`;
         const idx = url.indexOf(repoPath);
         if (idx !== -1) {
             relativeUrl = url.substring(idx + repoPath.length);
+        }
+    } else if (url.includes('gitee.com') && url.includes('/contents/')) {
+        // 尝试处理 API URL (虽然现在 mainImage.url 应该已经被处理了)
+        const repoPath = `${GITEE_CONFIG.USERNAME}/${GITEE_CONFIG.REPO}/contents/`;
+        const idx = url.indexOf(repoPath);
+        if (idx !== -1) {
+            // 提取 ?ref= 之前的路径部分
+            const pathPart = url.substring(idx + repoPath.length);
+            const queryIdx = pathPart.indexOf('?');
+            relativeUrl = queryIdx !== -1 ? pathPart.substring(0, queryIdx) : pathPart;
         }
     }
     // 假设路径为 "image/分类/商品_main.jpg"
@@ -279,8 +388,8 @@ function getDetailPath(item) {
       const dir = parts.slice(0, -1).join('/'); // "image/分类"
       const fileName = parts[parts.length - 1]; // "商品_main.jpg"
       // 提取商品名（去除后缀，如 _main.jpg）
-      const name = fileName.replace(/_main.*$/, '');
-      
+      const name = fileName.replace(/_main.* $ /, '');
+
       // 构造详情JSON路径
       return `${dir}/${name}_main.json`; // "image/分类/商品_main.json"
     }
@@ -288,36 +397,46 @@ function getDetailPath(item) {
   return null;
 }
 
-// ===== 获取详情页信息 =====
+
+// ===== 获取详情页信息 (保持原有逻辑，但会尝试使用 API URL) =====
 async function fetchDetail(detailPath) {
   if (!detailPath) return [];
-  
-  try {
-    console.log(detailPath);
-    
-    // 使用Gitee Raw链接获取详情JSON (Gitee API可能需要认证，优先使用Raw)
-    const rawUrl = getGiteeApiUrl(detailPath);
-    console.log(rawUrl);
-    
-    const response = await fetch(rawUrl);
-    
 
-    
-    if (!response.ok) throw new Error('Gitee Raw详情访问失败');
-    
+  try {
+    // console.log("Fetching detail path:", detailPath);
+    // 使用Gitee API链接获取详情JSON
+    const apiDetailUrl = getGiteeApiUrl(detailPath);
+    // console.log("API Detail URL:", apiDetailUrl);
+
+    const response = await fetch(apiDetailUrl);
+
+    if (!response.ok) {
+        // console.log("Detail API request failed:", response.status, response.statusText);
+        throw new Error(`Detail API access failed: ${response.status} ${response.statusText}`);
+    }
+
     const detailData = await response.json();
     const decodedContent = base64ToUtf8(detailData.content); // 2. 解码 content 字段
-    const actualProductData = JSON.parse(decodedContent); // 3. 解析解码后的产品数据
- 
-    
-    // 确保 detailData.images 存在且为数组
-    if (!Array.isArray(actualProductData.images)) {
-        console.error('详情文件格式错误，images字段不是数组:', detailData);
+    const actualDetailProductData = JSON.parse(decodedContent); // 3. 解析解码后的产品数据
+
+    // 确保 actualDetailProductData.images 存在且为数组
+    if (!Array.isArray(actualDetailProductData.images)) {
+        console.error('详情文件格式错误，images字段不是数组:', actualDetailProductData);
         return [];
     }
-    return actualProductData.images.map(img => 
-      img.url.startsWith('http') ? img.url : getGiteeRawUrl(img.url)
-    );
+
+    // 处理详情图片URL，同样如果是 API URL 则转换
+    const processedDetailImages = await Promise.all(actualDetailProductData.images.map(async (img) => {
+        let processedUrl = img.url;
+        if (img.url.startsWith('https://gitee.com/api/v5/repos/')) {
+            processedUrl = await convertApiUrlToDataUrl(img.url);
+        } else if (!img.url.startsWith('http')) {
+            processedUrl = getGiteeRawUrl(img.url);
+        }
+        return processedUrl;
+    }));
+
+    return processedDetailImages;
   } catch (error) {
     console.error('加载详情失败:', error);
     // 降级：如果还有其他方式可以获取，可以在这里尝试
@@ -332,10 +451,10 @@ async function fetchDetail(detailPath) {
 function renderCategoryFilters() {
   categoryFilters.innerHTML = categories.map(cat => `
     <button class="category-filter px-3 py-1 text-xs rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer" data-category="${cat}">
-        ${cat}
+         ${cat}
     </button>
   `).join('');
-  
+
   // 重新绑定分类过滤器事件
   document.querySelectorAll('.category-filter').forEach(btn => {
     btn.onclick = () => filterByCategory(btn.dataset.category);
@@ -375,25 +494,25 @@ function renderFilteredProducts() {
 // ===== 商品列表 =====
 function renderList(products) {
   listContainer.innerHTML = products.map((p, i) => {
-    const mainImage = p.images.find(img => img.type === 'main')?.url || '';
-    let dimensions = ` ${p.length} ×  ${p.width}`;
-    if (p.height) dimensions += ` ×  ${p.height}`;
-    
+    const mainImage = p.images.find(img => img.type === 'main')?.url || ''; // 现在拿到的是 Data URL 或 Raw URL
+    let dimensions = ` ${p.length} × ${p.width}`;
+    if (p.height) dimensions += ` × ${p.height}`;
+
     // 如果没有描述，则显示分类信息
     let infoText = p.description || p.category;
     if (!infoText) infoText = '暂无描述';
-    
+
     // 提取纯图片URL数组（用于画廊）
-    const imageUrls = p.images.map(img => img.url);
-    
+    const imageUrls = p.images.map(img => img.url); // 这些都是处理过的 URL
+
     return `
-      <div class="list-item group" style="animation-delay:  ${i * 100}ms">
-        <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container" 
-             data-detail-path=" ${p.detailPath || ''}"
-             data-original-images=" ${encodeURIComponent(JSON.stringify(imageUrls))}">
-          <img src=" ${mainImage}" referrerpolicy="no-referrer"
+      <div class="list-item group" style="animation-delay: ${i * 100}ms">
+        <div class="relative w-full aspect-ratio-box rounded-2xl overflow-hidden bg-card-bg cursor-pointer image-container"
+             data-detail-path="${p.detailPath || ''}"
+             data-original-images="${encodeURIComponent(JSON.stringify(imageUrls))}">
+          <img src="${mainImage}" referrerpolicy="no-referrer"
                class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-               loading="lazy">
+               loading="lazy" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0icmVkIiAvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1zaXplPSIxMiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiPlVSTFxyblRva2VuPC90ZXh0Pjwvc3ZnPg==';">
         </div>
         <div class="mt-3 px-1 flex justify-between items-end gap-4">
           <div>
@@ -406,30 +525,33 @@ function renderList(products) {
       </div>
     `;
   }).join('');
-  
+
   // 为所有图片容器添加点击事件监听器
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
       container.onclick = async () => {
-        const detailPath = container.getAttribute('data-detail-path').replace(/\s+/g, '');
+        const detailPath = container.getAttribute('data-detail-path');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
+
+        // console.log("Container clicked, detailPath:", detailPath);
+        // console.log("Original Images (from render):", originalImages);
 
         if (detailPath) {
           // 尝试加载详情页信息
           const detailImages = await fetchDetail(detailPath);
-          
+
           if (detailImages && detailImages.length > 0) {
-            // 使用详情页的图片（包括主图和详细图）
+            // console.log("Using detail images:", detailImages);
             openGallery(detailImages);
-            
           } else {
-            // 如果详情加载失败，使用原始图片
+            // console.log("Detail load failed, using original images:", originalImages);
+            // 如果详情加载失败，使用原始图片 (来自 renderList 的 processed images)
             openGallery(originalImages);
-            
           }
         } else {
-          // 如果没有详情路径，使用原始图片
+          // console.log("No detail path, using original images:", originalImages);
+          // 如果没有详情路径，使用原始图片 (来自 renderList 的 processed images)
           openGallery(originalImages);
         }
       };
@@ -440,17 +562,17 @@ function renderList(products) {
 // ===== 画廊 =====
 function openGallery(imageUrls) {
   if (!imageUrls.length) return;
-  
-  galleryState.images = imageUrls;
+
+  galleryState.images = imageUrls; // 现在 galleryState.images 也包含处理过的 URLs (Data/Raw)
   galleryState.currentIndex = 0;
   loadGalleryImage();
   renderGalleryIndicators();
   viewer.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-  
+
   // 更新导航按钮状态
   updateNavButtons();
-  
+
   // 添加触摸事件用于缩放和平移
   setupTouchEvents();
 }
@@ -460,17 +582,20 @@ function renderGalleryIndicators() {
     galleryIndicator.innerHTML = '';
     return;
   }
-  
+
   galleryIndicator.innerHTML = galleryState.images.map((_, index) => `
-    <div class="gallery-dot  ${index === galleryState.currentIndex ? 'active' : ''}" 
-         data-index=" ${index}"></div>
+    <div class="gallery-dot ${index === galleryState.currentIndex ? 'active' : ''}"
+         data-index="${index}"></div>
   `).join('');
-  
+
   // 绑定指示器点击事件
   document.querySelectorAll('.gallery-dot').forEach(dot => {
     dot.onclick = (e) => {
       e.stopPropagation();
       const index = parseInt(e.target.getAttribute('data-index'));
+      // console.log(index);
+      // console.log(e);
+
       galleryState.currentIndex = index;
       loadGalleryImage();
       renderGalleryIndicators();
@@ -524,10 +649,10 @@ let currentY = 0;
 function setupTouchEvents() {
   const container = document.getElementById('viewer-container');
   const img = document.getElementById('viewer-img');
-  
+
   // 重置变换
   resetViewerTransform();
-  
+
   // 双击缩放
   img.addEventListener('dblclick', (e) => {
     e.preventDefault();
@@ -545,7 +670,7 @@ function setupTouchEvents() {
 
   // 单指拖拽
   let isDragging = false;
-  
+
   img.addEventListener('mousedown', startDrag);
   img.addEventListener('touchstart', (e) => {
     if (e.touches.length === 1) {
@@ -559,7 +684,7 @@ function setupTouchEvents() {
   function startDrag(e) {
     e.preventDefault();
     isDragging = true;
-    
+
     if (e.type === 'touchstart') {
       lastX = e.touches[0].clientX;
       lastY = e.touches[0].clientY;
@@ -567,16 +692,16 @@ function setupTouchEvents() {
       lastX = e.clientX;
       lastY = e.clientY;
     }
-    
+
     img.style.cursor = 'grabbing';
   }
 
   function drag(e) {
     if (!isDragging) return;
-    
+
     e.preventDefault();
     let clientX, clientY;
-    
+
     if (e.type === 'mousemove') {
       clientX = e.clientX;
       clientY = e.clientY;
@@ -584,17 +709,17 @@ function setupTouchEvents() {
       clientX = e.touches[0].clientX;
       clientY = e.touches[0].clientY;
     }
-    
+
     if (clientX !== undefined && clientY !== undefined) {
       const deltaX = clientX - lastX;
       const deltaY = clientY - lastY;
-      
+
       currentX += deltaX;
       currentY += deltaY;
-      
+
       lastX = clientX;
       lastY = clientY;
-      
+
       applyTransform();
     }
   }
@@ -623,20 +748,20 @@ function setupTouchEvents() {
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      
+
       const scaleDelta = currentDistance / initialDistance;
       currentScale = initialScale * scaleDelta;
-      
+
       // 限制最大缩放比例
       if (currentScale > 5) currentScale = 5;
       if (currentScale < 0.5) currentScale = 0.5;
-      
+
       applyTransform();
     }
   }
 
   function applyTransform() {
-    img.style.transform = `translate( ${currentX}px,  ${currentY}px) scale( ${currentScale})`;
+    img.style.transform = `translate(${currentX}px, ${currentY}px) scale(${currentScale})`;
   }
 
   // 添加事件监听器
@@ -649,7 +774,7 @@ function setupTouchEvents() {
       pinch(e);
     }
   }, { passive: false });
-  
+
   // 点击容器关闭
   container.addEventListener('click', (e) => {
     if (e.target === container) {
@@ -672,12 +797,22 @@ function closeViewer() {
   viewer.classList.add('hidden');
   document.body.style.overflow = '';
   resetViewerTransform(); // 调用全局函数
+  // 清理可能的 Blob URLs (Data URLs created from Blobs)
+  if (viewerImg.src.startsWith('blob:')) {
+      URL.revokeObjectURL(viewerImg.src);
+  }
 }
 
 function loadGalleryImage() {
-  console.log(viewerImg.src);
-  
+  // 清理旧的 Blob URL (如果存在且是 blob: 开头)
+  if (viewerImg.src && viewerImg.src.startsWith('blob:')) {
+      URL.revokeObjectURL(viewerImg.src);
+  }
+
+  // 设置新图片源
   viewerImg.src = galleryState.images[galleryState.currentIndex];
+  // console.log("Loading gallery image:", galleryState.images[galleryState.currentIndex]);
+
   // 确保在图片加载完成后重置变换
   viewerImg.onload = function() {
     resetViewerTransform();
@@ -686,18 +821,8 @@ function loadGalleryImage() {
   // 图片加载失败时的处理
   viewerImg.onerror = function() {
     console.error('图片加载失败:', galleryState.images[galleryState.currentIndex]);
-    const regex = /\/raw\/master\/(.*)/;
-    const url = viewerImg.src;
-    const match = url.match(regex);
-    if (match && match[1]) {
-      const fallbackUrl = getGiteeApiUrl(match[1]);
-      console.log('尝试备用URL:', fallbackUrl);
-      viewerImg.src = fallbackUrl;
-    }
-    // 尝试下一张图片
-    if (galleryState.currentIndex < galleryState.images.length - 1) {
-      nextImage();
-    }
+    // 此处可以设置一个通用的错误图片 Data URL
+    this.src = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0icmVkIiAvPjx0ZXh0IHg9IjUwIiB5PSI1MCIgZm9udC1zaXplPSIxMiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGRvbWluYW50LWJhc2VsaW5lPSJtaWRkbGUiPkdhbGxlcnlcclxuSW1hZ2UgRXJyb3I8L3RleHQ+PC9zdmc+";
   };
 }
 
