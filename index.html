@@ -158,7 +158,8 @@ const GITEE_CONFIG = {
     USERNAME: 'panzetao',  // 替换为你的Gitee用户名
     REPO: 'image-bed',     // 替换为你的Gitee仓库名
     BRANCH: 'master',      // Gitee分支（通常是master）
-    BASE_PATH: 'image/'    // 文件在仓库中的基础路径，例如 'image/'
+    BASE_PATH: 'image/',    // 文件在仓库中的基础路径，例如 'image/'
+    path: "63d6522e0bb1698176acc3a9ab222dba"
 };
 
 // 构建Gitee URL的辅助函数
@@ -209,7 +210,8 @@ async function convertApiUrlToDataUrl(apiUrl) {
             method: 'GET',
             headers: {
                 'Accept': 'application/vnd.gitee.v3+json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+                'Authorization' : `token ${GITEE_CONFIG.path}`,
             },
             redirect: 'follow',
             cache: 'no-cache'
@@ -287,8 +289,11 @@ async function fetchProducts() {
       method: 'GET',
       headers: {
         'Accept': 'application/vnd.gitee.v3+json', // Gitee API Accept header
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36',
+        'Authorization' : `token ${GITEE_CONFIG.path}`, // <--- 添加认证头
       },
+      
+      
       redirect: 'follow',
       cache: 'no-cache'
     });
@@ -530,30 +535,10 @@ function renderList(products) {
   setTimeout(() => {
     document.querySelectorAll('.image-container').forEach(container => {
       container.onclick = async () => {
-        const detailPath = container.getAttribute('data-detail-path');
         const originalImagesStr = container.getAttribute('data-original-images');
         const originalImages = JSON.parse(decodeURIComponent(originalImagesStr));
+        openGallery(originalImages); // 先打开原始图片，防止等待详情加载
 
-        // console.log("Container clicked, detailPath:", detailPath);
-        // console.log("Original Images (from render):", originalImages);
-
-        if (detailPath) {
-          // 尝试加载详情页信息
-          const detailImages = await fetchDetail(detailPath);
-
-          if (detailImages && detailImages.length > 0) {
-            // console.log("Using detail images:", detailImages);
-            openGallery(detailImages);
-          } else {
-            // console.log("Detail load failed, using original images:", originalImages);
-            // 如果详情加载失败，使用原始图片 (来自 renderList 的 processed images)
-            openGallery(originalImages);
-          }
-        } else {
-          // console.log("No detail path, using original images:", originalImages);
-          // 如果没有详情路径，使用原始图片 (来自 renderList 的 processed images)
-          openGallery(originalImages);
-        }
       };
     });
   }, 100);
